@@ -1,0 +1,17 @@
+# Datos privados: nunca al repositorio
+Chats/
+data/
+*.db
+*.db-*
+*.sqlite*
+reports/
+.env
+.env.*
+!.env.example
+# Entorno
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+node_modules/

@@ -1,0 +1,7 @@
+[5/20/26, 10:01:00] Hada Ensayo: ok
+[5/20/26, 10:01:00] Hada Ensayo: ok
+[5/20/26, 10:01:00] Hada Ensayo: ok
+[5/20/26, 10:02:00] Gil Ensayo: texto corregido
+[5/20/26, 10:03:00] Hada Ensayo: tres
+[5/20/26, 10:04:00] Gil Ensayo: cuatro
+[5/21/26, 09:00:00] Hada Ensayo: cinco

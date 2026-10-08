@@ -1,0 +1,18 @@
+{
+  "name": "community-lens-web",
+  "private": true,
+  "type": "module",
+  "description": "Frontend de Community Lens. Node solo hace falta para DESARROLLAR el frontend; web/dist ya viene compilado.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "schema": "ts-json-schema-generator --path web/src/types.ts --tsconfig tsconfig.json --type '*' --no-type-check -o web/src/api-schema.json",
+    "check": "npm run schema && npm run build"
+  },
+  "devDependencies": {
+    "@observablehq/plot": "0.6.17",
+    "@types/d3": "^7.4.3",
+    "ts-json-schema-generator": "^2.3.0",
+    "typescript": "^5.6.0"
+  }
+}

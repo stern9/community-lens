@@ -1,0 +1,7 @@
+Messages and calls are end-to-end encrypted. No one outside of this chat can read them.
+[6/24/26, 9:14:22 AM] +506 5555 0202: https://example.com/a
+[6/24/26, 9:45:07 AM] - +506 5555 0303 removed +506 5555 0404
+[6/24/26, 12:00:00 PM] +506 5555 0303: <image omitted> Con texto
+[6/24/26, 12:30:00 AM] You: medianoche y media
+[6/25/26, 11:06:34 PM] - [System notification]
+[6/25/26, 11:07:00 PM] +506 5555 0202: <unknown message>

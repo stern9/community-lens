@@ -1,0 +1,24 @@
+[1/14/26, 09:00:00] Grupo Demo: ‎Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them.
+[1/14/26, 09:00:05] ~ Ana Prueba: ‎~ Ana Prueba created this group
+[1/31/26, 19:40:08] ~ Beto Ficticio: ‎~ Beto Ficticio joined using a group link
+[1/31/26, 20:54:37] ~ Ana Prueba: ¿Alguien sabe de un buen curso de SQL?
+[1/31/26, 20:55:10] ~ Beto Ficticio: Les comparto este artículo https://www.example.org/sql?a=1 y también https://docs.example.org/guia.
+[1/31/26, 20:56:00] ~ Ana Prueba: Lista de ideas:
+- una
+
+- dos con emoji 👩🏽‍💻 y acentos áéíóú ñ
+‎[1/31/26, 21:24:36] ~ Beto Ficticio: Miren esto ‎image omitted
+‎[1/31/26, 21:27:06] ~ Ana Prueba: ‎sticker omitted
+[2/1/26, 08:00:00] ~ Beto Ficticio: jaja
+[2/1/26, 08:00:00] ~ Beto Ficticio: jaja
+[2/1/26, 08:01:00] ‪+506 5555 0101‬: ‎‪+506 5555 0101‬ joined from the community
+[2/1/26, 08:02:00] ‪+506 5555 0101‬: Propongo que hagamos un meetup en marzo
+[2/1/26, 08:03:00] ~ Ana Prueba: ‎This message was deleted.
+[2/1/26, 08:04:00] ~ Beto Ficticio: Me apunto, puedo ayudar con la logística ‎<This message was edited>
+[2/1/26, 08:05:00] ~ Ana Prueba: <script>alert("xss")</script> <img src=x onerror=alert(1)>
+[2/1/26, 08:06:00] ~ Ana Prueba: ‎POLL:
+¿Cuándo?
+‎OPTION: Lunes (2 votes)
+‎OPTION: Martes (1 vote)
+[2/1/26, 08:07:00] ~ Beto Ficticio: ‎~ Beto Ficticio hizo algo que este parser no conoce
+[2/2/26, 23:59:59] ~ Ana Prueba: image omitted es una frase que escribí yo, no un adjunto real

@@ -1,0 +1,2909 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ActivateRunResult": {
+      "additionalProperties": false,
+      "properties": {
+        "active_run_id": {
+          "type": "number"
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "active_run_id"
+      ],
+      "type": "object"
+    },
+    "ApiErrorBody": {
+      "additionalProperties": false,
+      "description": "Cuerpo de error: FastAPI usa `detail`; los errores de importación agregan `error` y datos.",
+      "properties": {
+        "detail": {},
+        "error": {
+          "type": "string"
+        },
+        "overlap": {
+          "additionalProperties": false,
+          "properties": {
+            "existing_in_window": {
+              "type": "number"
+            },
+            "matched": {
+              "type": "number"
+            },
+            "new_in_window": {
+              "type": "number"
+            },
+            "ratio": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "existing_in_window",
+            "new_in_window",
+            "matched",
+            "ratio"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "AuthorAlias": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "number"
+        },
+        "kind": {
+          "$ref": "#/definitions/AuthorKind"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "AuthorKind": {
+      "enum": [
+        "phone",
+        "profile_name",
+        "contact_name",
+        "self"
+      ],
+      "type": "string"
+    },
+    "AuthorRow": {
+      "additionalProperties": false,
+      "properties": {
+        "active_days": {
+          "type": "number"
+        },
+        "aliases": {
+          "items": {
+            "$ref": "#/definitions/AuthorAlias"
+          },
+          "type": "array"
+        },
+        "first_day": {
+          "$ref": "#/definitions/IsoDay"
+        },
+        "id": {
+          "type": "number"
+        },
+        "kind": {
+          "$ref": "#/definitions/AuthorKind"
+        },
+        "label": {
+          "type": "string"
+        },
+        "last_day": {
+          "$ref": "#/definitions/IsoDay"
+        },
+        "messages": {
+          "type": "number"
+        },
+        "share": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "kind",
+        "messages",
+        "share",
+        "active_days",
+        "first_day",
+        "last_day",
+        "aliases"
+      ],
+      "type": "object"
+    },
+    "AuthorsResult": {
+      "additionalProperties": false,
+      "properties": {
+        "authors": {
+          "items": {
+            "$ref": "#/definitions/AuthorRow"
+          },
+          "type": "array"
+        },
+        "denominator": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "denominator",
+        "authors",
+        "note"
+      ],
+      "type": "object"
+    },
+    "AutoLabel": {
+      "additionalProperties": false,
+      "properties": {
+        "assigned": {
+          "type": "boolean"
+        },
+        "category": {
+          "$ref": "#/definitions/CategoryKey"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "context_sent": {
+                  "type": "number"
+                },
+                "rules": {
+                  "additionalProperties": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "description": "Reglas disparadas por categoría (proveedor de reglas).",
+                  "type": "object"
+                },
+                "threshold": {
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/definitions/ProviderName"
+        },
+        "run_id": {
+          "type": "number"
+        },
+        "score": {
+          "description": "Solo si el proveedor devuelve puntuación (Jev: valor \"noul\" 0–1).",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "category",
+        "assigned",
+        "score",
+        "provider",
+        "model",
+        "run_id",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "Averages": {
+      "additionalProperties": false,
+      "properties": {
+        "peak_hour": {
+          "description": "Hora del día (0–23) con más mensajes; null si no hay mensajes.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "peak_hour_messages": {
+          "type": "number"
+        },
+        "peak_hour_per_day": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "per_active_day": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "per_day": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "per_day_denominator": {
+          "type": "number"
+        },
+        "per_hour": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "per_hour_denominator": {
+          "type": "number"
+        },
+        "per_month": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "per_month_denominator": {
+          "type": "number"
+        },
+        "per_month_messages": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "per_day",
+        "per_day_denominator",
+        "per_active_day",
+        "per_month",
+        "per_month_denominator",
+        "per_month_messages",
+        "per_hour",
+        "per_hour_denominator",
+        "peak_hour",
+        "peak_hour_messages",
+        "peak_hour_per_day"
+      ],
+      "type": "object"
+    },
+    "Category": {
+      "additionalProperties": false,
+      "properties": {
+        "definition": {
+          "type": "string"
+        },
+        "key": {
+          "$ref": "#/definitions/CategoryKey"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "definition"
+      ],
+      "type": "object"
+    },
+    "CategoryCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "anuncio": {
+          "type": "number"
+        },
+        "conversacion_general": {
+          "type": "number"
+        },
+        "oferta_de_colaboracion": {
+          "type": "number"
+        },
+        "pregunta": {
+          "type": "number"
+        },
+        "propuesta_de_proyecto": {
+          "type": "number"
+        },
+        "recurso_compartido": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "pregunta",
+        "oferta_de_colaboracion",
+        "propuesta_de_proyecto",
+        "recurso_compartido",
+        "anuncio",
+        "conversacion_general"
+      ],
+      "type": "object"
+    },
+    "CategoryKey": {
+      "enum": [
+        "pregunta",
+        "oferta_de_colaboracion",
+        "propuesta_de_proyecto",
+        "recurso_compartido",
+        "anuncio",
+        "conversacion_general"
+      ],
+      "type": "string"
+    },
+    "CategoryMonth": {
+      "additionalProperties": false,
+      "properties": {
+        "classified": {
+          "type": "number"
+        },
+        "counts": {
+          "$ref": "#/definitions/CategoryCounts"
+        },
+        "month": {
+          "$ref": "#/definitions/IsoMonth"
+        },
+        "partial": {
+          "type": "boolean"
+        },
+        "participant_messages": {
+          "type": "number"
+        },
+        "shares": {
+          "additionalProperties": false,
+          "properties": {
+            "anuncio": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "conversacion_general": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "oferta_de_colaboracion": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "pregunta": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "propuesta_de_proyecto": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "recurso_compartido": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "pregunta",
+            "oferta_de_colaboracion",
+            "propuesta_de_proyecto",
+            "recurso_compartido",
+            "anuncio",
+            "conversacion_general"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "month",
+        "participant_messages",
+        "classified",
+        "counts",
+        "shares",
+        "partial"
+      ],
+      "type": "object"
+    },
+    "CategoryMonthly": {
+      "additionalProperties": false,
+      "properties": {
+        "months": {
+          "items": {
+            "$ref": "#/definitions/CategoryMonth"
+          },
+          "type": "array"
+        },
+        "note": {
+          "description": "Ausente cuando todavía no hay ninguna ejecución.",
+          "type": "string"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Run"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "run",
+        "months"
+      ],
+      "type": "object"
+    },
+    "CategorySummary": {
+      "additionalProperties": false,
+      "properties": {
+        "auto": {
+          "$ref": "#/definitions/CategoryCounts"
+        },
+        "classified_messages": {
+          "type": "number"
+        },
+        "corrected_messages": {
+          "type": "number"
+        },
+        "effective": {
+          "$ref": "#/definitions/CategoryCounts"
+        },
+        "human": {
+          "$ref": "#/definitions/CategoryCounts"
+        },
+        "note": {
+          "type": "string"
+        },
+        "participant_messages": {
+          "type": "number"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Run"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "run",
+        "participant_messages",
+        "classified_messages",
+        "corrected_messages",
+        "auto",
+        "human",
+        "effective",
+        "note"
+      ],
+      "type": "object"
+    },
+    "Chat": {
+      "additionalProperties": false,
+      "properties": {
+        "active_run_id": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "first_record": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LocalTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flagged_for_review": {
+          "type": "number"
+        },
+        "id": {
+          "type": "number"
+        },
+        "imports": {
+          "type": "number"
+        },
+        "last_record": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LocalTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "participant_messages": {
+          "type": "number"
+        },
+        "records": {
+          "type": "number"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "active_run_id",
+        "created_at",
+        "first_record",
+        "flagged_for_review",
+        "id",
+        "imports",
+        "last_record",
+        "name",
+        "participant_messages",
+        "records",
+        "timezone"
+      ],
+      "type": "object"
+    },
+    "ChatRow": {
+      "additionalProperties": false,
+      "properties": {
+        "active_run_id": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "id": {
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "timezone",
+        "created_at",
+        "active_run_id"
+      ],
+      "type": "object"
+    },
+    "Concentration": {
+      "additionalProperties": false,
+      "properties": {
+        "curve": {
+          "items": {
+            "$ref": "#/definitions/CurvePoint"
+          },
+          "type": "array"
+        },
+        "denominator": {
+          "type": "number"
+        },
+        "half_rank": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "top10": {
+          "$ref": "#/definitions/TopShare"
+        },
+        "top5": {
+          "$ref": "#/definitions/TopShare"
+        }
+      },
+      "required": [
+        "top5",
+        "top10",
+        "curve",
+        "half_rank",
+        "denominator"
+      ],
+      "type": "object"
+    },
+    "Config": {
+      "additionalProperties": false,
+      "properties": {
+        "default_timezone": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "loopback": {
+          "type": "boolean"
+        },
+        "port": {
+          "type": "number"
+        },
+        "providers": {
+          "items": {
+            "$ref": "#/definitions/ProviderInfo"
+          },
+          "type": "array"
+        },
+        "taxonomy": {
+          "additionalProperties": false,
+          "properties": {
+            "categories": {
+              "items": {
+                "$ref": "#/definitions/Category"
+              },
+              "type": "array"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "version",
+            "categories"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "default_timezone",
+        "host",
+        "port",
+        "loopback",
+        "taxonomy",
+        "providers"
+      ],
+      "type": "object"
+    },
+    "ContextResult": {
+      "additionalProperties": false,
+      "properties": {
+        "chat_id": {
+          "type": "number"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/Message"
+          },
+          "type": "array"
+        },
+        "message_id": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "chat_id",
+        "items",
+        "note"
+      ],
+      "type": "object"
+    },
+    "Conversation": {
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "type": "number"
+        },
+        "first_day": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDay"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_day": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDay"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "silent_days": {
+          "items": {
+            "$ref": "#/definitions/SilentDay"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "first_day",
+        "last_day",
+        "days",
+        "silent_days"
+      ],
+      "type": "object"
+    },
+    "CurvePoint": {
+      "additionalProperties": false,
+      "properties": {
+        "messages": {
+          "type": "number"
+        },
+        "rank": {
+          "type": "number"
+        },
+        "share": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "rank",
+        "messages",
+        "share"
+      ],
+      "type": "object"
+    },
+    "DailyPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "authors": {
+          "type": "number"
+        },
+        "day": {
+          "$ref": "#/definitions/IsoDay"
+        },
+        "messages": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "day",
+        "messages",
+        "authors"
+      ],
+      "type": "object"
+    },
+    "DateDetection": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "$ref": "#/definitions/DateEvidence"
+        },
+        "order": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DateOrder"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "detected",
+            "ambiguous",
+            "conflict",
+            "empty"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "order",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "DateEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "backward_steps": {
+          "additionalProperties": false,
+          "properties": {
+            "DMY": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "MDY": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "MDY",
+            "DMY"
+          ],
+          "type": "object"
+        },
+        "example_line_first": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "example_line_second": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "example_raw": {
+          "type": "string"
+        },
+        "first_field_gt12": {
+          "type": "number"
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DateOrder"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Pista débil por orden cronológico; solo cuando el estado es \"ambiguous\"."
+        },
+        "reason": {
+          "description": "Presente solo cuando el orden es YMD (año de 4 dígitos al inicio).",
+          "type": "string"
+        },
+        "second_field_gt12": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "DateOrder": {
+      "enum": [
+        "MDY",
+        "DMY",
+        "YMD"
+      ],
+      "type": "string"
+    },
+    "Definitions": {
+      "additionalProperties": false,
+      "properties": {
+        "active_authors": {
+          "type": "string"
+        },
+        "active_days": {
+          "type": "string"
+        },
+        "averages": {
+          "type": "string"
+        },
+        "calendar_days": {
+          "type": "string"
+        },
+        "concentration": {
+          "type": "string"
+        },
+        "concentration_curve": {
+          "type": "string"
+        },
+        "conversation_days": {
+          "type": "string"
+        },
+        "deleted": {
+          "type": "string"
+        },
+        "domains": {
+          "type": "string"
+        },
+        "media_omitted": {
+          "type": "string"
+        },
+        "messages_with_links": {
+          "type": "string"
+        },
+        "partial_month": {
+          "type": "string"
+        },
+        "participant_messages": {
+          "type": "string"
+        },
+        "silent_days": {
+          "type": "string"
+        },
+        "silent_members": {
+          "type": "string"
+        },
+        "system_notices": {
+          "type": "string"
+        },
+        "total_links": {
+          "type": "string"
+        },
+        "weekday_hour": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "participant_messages",
+        "system_notices",
+        "active_authors",
+        "active_days",
+        "averages",
+        "conversation_days",
+        "silent_days",
+        "calendar_days",
+        "concentration",
+        "messages_with_links",
+        "total_links",
+        "domains",
+        "media_omitted",
+        "deleted",
+        "partial_month",
+        "weekday_hour",
+        "concentration_curve",
+        "silent_members"
+      ],
+      "type": "object"
+    },
+    "DeleteChatResult": {
+      "additionalProperties": false,
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        },
+        "records_removed": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "deleted",
+        "records_removed"
+      ],
+      "type": "object"
+    },
+    "Diagnostics": {
+      "additionalProperties": false,
+      "properties": {
+        "clock": {
+          "enum": [
+            "12h",
+            "24h",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deleted_messages": {
+          "type": "number"
+        },
+        "distinct_author_labels": {
+          "type": "number"
+        },
+        "edited_messages": {
+          "type": "number"
+        },
+        "flagged_for_review": {
+          "type": "number"
+        },
+        "format_variant": {
+          "enum": [
+            "bracket",
+            "dash",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "has_seconds": {
+          "type": "boolean"
+        },
+        "invalid_date_records": {
+          "type": "number"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/definitions/ImportIssue"
+          },
+          "type": "array"
+        },
+        "lines_total": {
+          "type": "number"
+        },
+        "media_by_kind": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "media_omitted_messages": {
+          "type": "number"
+        },
+        "multiline_records": {
+          "type": "number"
+        },
+        "participant_messages": {
+          "type": "number"
+        },
+        "period_end": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LocalTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "period_start": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LocalTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preamble_blocks": {
+          "type": "number"
+        },
+        "records_detected": {
+          "type": "number"
+        },
+        "system_by_subtype": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "system_notices": {
+          "type": "number"
+        },
+        "unrecognized": {
+          "type": "number"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "lines_total",
+        "records_detected",
+        "participant_messages",
+        "system_notices",
+        "system_by_subtype",
+        "unrecognized",
+        "invalid_date_records",
+        "preamble_blocks",
+        "flagged_for_review",
+        "multiline_records",
+        "media_omitted_messages",
+        "media_by_kind",
+        "deleted_messages",
+        "edited_messages",
+        "distinct_author_labels",
+        "period_start",
+        "period_end",
+        "format_variant",
+        "clock",
+        "has_seconds",
+        "warnings",
+        "issues"
+      ],
+      "type": "object"
+    },
+    "DocumentResource": {
+      "additionalProperties": false,
+      "properties": {
+        "first_shared": {
+          "$ref": "#/definitions/LocalTimestamp"
+        },
+        "has_versions": {
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "document",
+          "type": "string"
+        },
+        "last_shared": {
+          "$ref": "#/definitions/LocalTimestamp"
+        },
+        "latest": {
+          "$ref": "#/definitions/DocumentVersion",
+          "description": "Versión con el número más alto (o el envío más reciente si no hay números)."
+        },
+        "latest_is_most_recent": {
+          "description": "false si lo último que se envió fue una versión anterior a la más alta.",
+          "type": "boolean"
+        },
+        "sharers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "shares": {
+          "type": "number"
+        },
+        "title": {
+          "type": "string"
+        },
+        "versions": {
+          "description": "De la más nueva a la más vieja.",
+          "items": {
+            "$ref": "#/definitions/DocumentVersion"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "key",
+        "title",
+        "shares",
+        "first_shared",
+        "last_shared",
+        "sharers",
+        "latest",
+        "versions",
+        "has_versions",
+        "latest_is_most_recent"
+      ],
+      "type": "object"
+    },
+    "DocumentVersion": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "first_shared": {
+          "$ref": "#/definitions/LocalTimestamp"
+        },
+        "message_id": {
+          "description": "Mensaje más reciente en que se compartió este archivo; abre la vista de contexto.",
+          "type": "number"
+        },
+        "name": {
+          "description": "Nombre del archivo tal como figura en la exportación.",
+          "type": "string"
+        },
+        "times_shared": {
+          "type": "number"
+        },
+        "ts_local": {
+          "$ref": "#/definitions/LocalTimestamp"
+        },
+        "version": {
+          "description": "Número de versión leído del nombre (\"1.6\"); null si el nombre no trae versión.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "message_id",
+        "name",
+        "version",
+        "ts_local",
+        "author",
+        "times_shared",
+        "first_shared"
+      ],
+      "type": "object"
+    },
+    "DomainRow": {
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "links": {
+          "type": "number"
+        },
+        "messages": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "domain",
+        "messages",
+        "links"
+      ],
+      "type": "object"
+    },
+    "HumanLabel": {
+      "additionalProperties": false,
+      "properties": {
+        "categories": {
+          "items": {
+            "$ref": "#/definitions/CategoryKey"
+          },
+          "type": "array"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "categories",
+        "note",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "ImportCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "chat_id": {
+          "type": "number"
+        },
+        "existing_in_window": {
+          "type": "number"
+        },
+        "matched": {
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        },
+        "name_matches": {
+          "type": "boolean"
+        },
+        "new_in_window": {
+          "type": "number"
+        },
+        "ratio": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "same_file_import_id": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "chat_id",
+        "name",
+        "same_file_import_id",
+        "name_matches",
+        "existing_in_window",
+        "new_in_window",
+        "matched",
+        "ratio"
+      ],
+      "type": "object"
+    },
+    "ImportCommitDuplicate": {
+      "additionalProperties": false,
+      "properties": {
+        "chat_id": {
+          "type": "number"
+        },
+        "import_id": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string"
+        },
+        "status": {
+          "const": "duplicate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "chat_id",
+        "import_id",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ImportCommitImported": {
+      "additionalProperties": false,
+      "properties": {
+        "chat_id": {
+          "type": "number"
+        },
+        "diagnostics": {
+          "$ref": "#/definitions/Diagnostics"
+        },
+        "import_id": {
+          "type": "number"
+        },
+        "reconciliation": {
+          "$ref": "#/definitions/Reconciliation"
+        },
+        "status": {
+          "const": "imported",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "chat_id",
+        "import_id",
+        "diagnostics",
+        "reconciliation"
+      ],
+      "type": "object"
+    },
+    "ImportCommitRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "chat_id": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "chat_name": {
+          "type": "string"
+        },
+        "confirm_low_overlap": {
+          "type": "boolean"
+        },
+        "date_order": {
+          "$ref": "#/definitions/DateOrder"
+        },
+        "file_name": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "file_name",
+        "chat_id",
+        "chat_name",
+        "timezone",
+        "date_order",
+        "confirm_low_overlap"
+      ],
+      "type": "object"
+    },
+    "ImportCommitResult": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ImportCommitImported"
+        },
+        {
+          "$ref": "#/definitions/ImportCommitDuplicate"
+        }
+      ]
+    },
+    "ImportIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "excerpt": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "preamble",
+            "invalid_date"
+          ],
+          "type": "string"
+        },
+        "line_end": {
+          "type": "number"
+        },
+        "line_start": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "line_start",
+        "line_end",
+        "kind",
+        "detail",
+        "excerpt"
+      ],
+      "type": "object"
+    },
+    "ImportPreview": {
+      "additionalProperties": false,
+      "properties": {
+        "candidates": {
+          "items": {
+            "$ref": "#/definitions/ImportCandidate"
+          },
+          "type": "array"
+        },
+        "date_detection": {
+          "$ref": "#/definitions/DateDetection"
+        },
+        "date_order": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DateOrder"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "date_order_source": {
+          "enum": [
+            "user",
+            "detected",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "date_order_warning": {
+          "type": "string"
+        },
+        "diagnostics": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Diagnostics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null mientras falte elegir el orden de fecha."
+        },
+        "file_bytes": {
+          "type": "number"
+        },
+        "file_name": {
+          "type": "string"
+        },
+        "needs_date_order": {
+          "type": "boolean"
+        },
+        "recommendation": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ImportRecommendation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "suggested_name": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "file_name",
+        "file_bytes",
+        "suggested_name",
+        "timezone",
+        "date_detection",
+        "date_order",
+        "date_order_source",
+        "needs_date_order",
+        "diagnostics",
+        "candidates",
+        "recommendation"
+      ],
+      "type": "object"
+    },
+    "ImportRecommendation": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "new",
+            "update",
+            "duplicate"
+          ],
+          "type": "string"
+        },
+        "chat_id": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "chat_id",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "ImportRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "chat_id": {
+          "type": "number"
+        },
+        "clock": {
+          "enum": [
+            "12h",
+            "24h",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "date_order": {
+          "$ref": "#/definitions/DateOrder"
+        },
+        "date_order_source": {
+          "enum": [
+            "user",
+            "detected"
+          ],
+          "type": "string"
+        },
+        "diagnostics": {
+          "$ref": "#/definitions/Diagnostics"
+        },
+        "file_bytes": {
+          "type": "number"
+        },
+        "file_name": {
+          "type": "string"
+        },
+        "file_sha256": {
+          "type": "string"
+        },
+        "format_variant": {
+          "enum": [
+            "bracket",
+            "dash",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "has_seconds": {
+          "type": "number"
+        },
+        "id": {
+          "type": "number"
+        },
+        "imported_at": {
+          "type": "string"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/definitions/ImportIssue"
+          },
+          "type": "array"
+        },
+        "reconciliation": {
+          "$ref": "#/definitions/Reconciliation"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "chat_id",
+        "file_name",
+        "file_sha256",
+        "file_bytes",
+        "imported_at",
+        "date_order",
+        "date_order_source",
+        "clock",
+        "has_seconds",
+        "timezone",
+        "format_variant",
+        "diagnostics",
+        "reconciliation",
+        "issues"
+      ],
+      "type": "object"
+    },
+    "IsoDay": {
+      "description": "Día \"AAAA-MM-DD\".",
+      "type": "string"
+    },
+    "IsoMonth": {
+      "description": "Mes \"AAAA-MM\".",
+      "type": "string"
+    },
+    "LabelsResult": {
+      "additionalProperties": false,
+      "properties": {
+        "categories": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/definitions/CategoryKey"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "categories"
+      ],
+      "type": "object"
+    },
+    "LinkResource": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "domain": {
+          "type": "string"
+        },
+        "first_shared": {
+          "$ref": "#/definitions/LocalTimestamp"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "link",
+          "type": "string"
+        },
+        "last_shared": {
+          "$ref": "#/definitions/LocalTimestamp"
+        },
+        "message_id": {
+          "description": "Mensaje más reciente que lo incluye.",
+          "type": "number"
+        },
+        "sharers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "shares": {
+          "description": "Mensajes distintos que incluyen el enlace.",
+          "type": "number"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "key",
+        "url",
+        "domain",
+        "shares",
+        "first_shared",
+        "last_shared",
+        "message_id",
+        "author",
+        "sharers"
+      ],
+      "type": "object"
+    },
+    "LocalTimestamp": {
+      "description": "Fecha local \"AAAA-MM-DD HH:MM:SS\".",
+      "type": "string"
+    },
+    "Message": {
+      "additionalProperties": false,
+      "properties": {
+        "author_id": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "author_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "author_raw": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "auto": {
+          "items": {
+            "$ref": "#/definitions/AutoLabel"
+          },
+          "type": "array"
+        },
+        "canonical_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "chat_id": {
+          "type": "number"
+        },
+        "chat_name": {
+          "type": "string"
+        },
+        "effective": {
+          "items": {
+            "$ref": "#/definitions/CategoryKey"
+          },
+          "type": "array"
+        },
+        "effective_source": {
+          "enum": [
+            "human",
+            "auto",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "human": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/HumanLabel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "number"
+        },
+        "is_deleted": {
+          "description": "Banderas 0/1 tal como salen de SQLite.",
+          "type": "number"
+        },
+        "is_edited": {
+          "type": "number"
+        },
+        "is_poll": {
+          "type": "number"
+        },
+        "link_count": {
+          "type": "number"
+        },
+        "media_kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "needs_review": {
+          "type": "number"
+        },
+        "record_type": {
+          "$ref": "#/definitions/RecordType"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "review_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seq": {
+          "type": "number"
+        },
+        "snippet": {
+          "description": "Solo en búsquedas con texto; delimita coincidencias con U+0001 … U+0002.",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/definitions/MessageSource"
+          },
+          "type": "array"
+        },
+        "subtype": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "ts_local": {
+          "$ref": "#/definitions/LocalTimestamp"
+        },
+        "ts_utc": {
+          "type": "string"
+        },
+        "ts_written": {
+          "$ref": "#/definitions/LocalTimestamp"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "uid",
+        "chat_id",
+        "chat_name",
+        "seq",
+        "author_id",
+        "author_raw",
+        "author_label",
+        "canonical_label",
+        "ts_local",
+        "ts_written",
+        "ts_utc",
+        "record_type",
+        "subtype",
+        "text",
+        "media_kind",
+        "is_deleted",
+        "is_edited",
+        "is_poll",
+        "link_count",
+        "needs_review",
+        "review_reason",
+        "ref",
+        "auto",
+        "human",
+        "effective",
+        "effective_source",
+        "sources"
+      ],
+      "type": "object"
+    },
+    "MessageSource": {
+      "additionalProperties": false,
+      "properties": {
+        "file_name": {
+          "type": "string"
+        },
+        "import_id": {
+          "type": "number"
+        },
+        "line_end": {
+          "type": "number"
+        },
+        "line_start": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "file_name",
+        "import_id",
+        "line_start",
+        "line_end"
+      ],
+      "type": "object"
+    },
+    "MonthlyPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "active_days": {
+          "type": "number"
+        },
+        "authors": {
+          "type": "number"
+        },
+        "covered_from": {
+          "$ref": "#/definitions/IsoDay"
+        },
+        "covered_to": {
+          "$ref": "#/definitions/IsoDay"
+        },
+        "days_covered": {
+          "type": "number"
+        },
+        "days_in_month": {
+          "type": "number"
+        },
+        "messages": {
+          "type": "number"
+        },
+        "month": {
+          "$ref": "#/definitions/IsoMonth"
+        },
+        "partial": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "month",
+        "messages",
+        "authors",
+        "active_days",
+        "partial",
+        "covered_from",
+        "covered_to",
+        "days_in_month",
+        "days_covered"
+      ],
+      "type": "object"
+    },
+    "OkResult": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "ProviderInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "context_messages": {
+          "type": "number"
+        },
+        "data_sent": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "external": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        },
+        "max_messages": {
+          "type": "number"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "$ref": "#/definitions/ProviderName"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "score_meaning": {
+          "type": "string"
+        },
+        "threshold": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "available",
+        "external",
+        "model",
+        "reason",
+        "description"
+      ],
+      "type": "object"
+    },
+    "ProviderName": {
+      "enum": [
+        "rules",
+        "jev",
+        "openai_decisions"
+      ],
+      "type": "string"
+    },
+    "Reconciliation": {
+      "additionalProperties": false,
+      "properties": {
+        "added": {
+          "type": "number"
+        },
+        "ambiguous_pairs": {
+          "type": "number"
+        },
+        "matched_existing": {
+          "type": "number"
+        },
+        "only_in_previous": {
+          "type": "number"
+        },
+        "precision": {
+          "enum": [
+            "segundo",
+            "minuto"
+          ],
+          "type": "string"
+        },
+        "window_existing": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "matched_existing",
+        "added",
+        "only_in_previous",
+        "ambiguous_pairs",
+        "window_existing",
+        "precision"
+      ],
+      "type": "object"
+    },
+    "RecordType": {
+      "enum": [
+        "message",
+        "system",
+        "unrecognized"
+      ],
+      "type": "string"
+    },
+    "ResourceLibrary": {
+      "additionalProperties": false,
+      "properties": {
+        "counts": {
+          "additionalProperties": false,
+          "properties": {
+            "document_shares": {
+              "type": "number"
+            },
+            "documents": {
+              "type": "number"
+            },
+            "link_shares": {
+              "type": "number"
+            },
+            "links": {
+              "type": "number"
+            },
+            "unnamed_documents": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "documents",
+            "document_shares",
+            "unnamed_documents",
+            "links",
+            "link_shares"
+          ],
+          "type": "object"
+        },
+        "items": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/DocumentResource"
+              },
+              {
+                "$ref": "#/definitions/LinkResource"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "document",
+            "link"
+          ],
+          "type": "string"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "total",
+        "limit",
+        "offset",
+        "items",
+        "counts",
+        "note"
+      ],
+      "type": "object"
+    },
+    "Run": {
+      "additionalProperties": false,
+      "properties": {
+        "chat_id": {
+          "type": "number"
+        },
+        "config": {
+          "$ref": "#/definitions/RunConfig"
+        },
+        "date_from": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDay"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "date_to": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDay"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finished_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "number"
+        },
+        "model": {
+          "type": "string"
+        },
+        "n_errors": {
+          "type": "number"
+        },
+        "n_messages": {
+          "type": "number"
+        },
+        "provider": {
+          "$ref": "#/definitions/ProviderName"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/RunStatus"
+        },
+        "taxonomy_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "chat_id",
+        "provider",
+        "model",
+        "taxonomy_version",
+        "config",
+        "date_from",
+        "date_to",
+        "started_at",
+        "finished_at",
+        "status",
+        "n_messages",
+        "n_errors",
+        "error"
+      ],
+      "type": "object"
+    },
+    "RunConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "context_messages": {
+          "type": "number"
+        },
+        "context_window_minutes": {
+          "type": "number"
+        },
+        "eligible_messages": {
+          "type": "number"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "max_messages": {
+          "type": "number"
+        },
+        "max_state_chars": {
+          "type": "number"
+        },
+        "question_type": {
+          "type": "string"
+        },
+        "requested_model": {
+          "type": "string"
+        },
+        "score_kind": {
+          "type": "string"
+        },
+        "scores": {
+          "type": "boolean"
+        },
+        "threshold": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "RunListItem": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "description": "true en la ejecución que alimenta las categorías del chat.",
+          "type": "boolean"
+        },
+        "chat_id": {
+          "type": "number"
+        },
+        "config": {
+          "$ref": "#/definitions/RunConfig"
+        },
+        "date_from": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDay"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "date_to": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDay"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finished_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "number"
+        },
+        "model": {
+          "type": "string"
+        },
+        "n_errors": {
+          "type": "number"
+        },
+        "n_messages": {
+          "type": "number"
+        },
+        "provider": {
+          "$ref": "#/definitions/ProviderName"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/RunStatus"
+        },
+        "taxonomy_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "active",
+        "chat_id",
+        "config",
+        "date_from",
+        "date_to",
+        "error",
+        "finished_at",
+        "id",
+        "model",
+        "n_errors",
+        "n_messages",
+        "provider",
+        "started_at",
+        "status",
+        "taxonomy_version"
+      ],
+      "type": "object"
+    },
+    "RunStartResult": {
+      "additionalProperties": false,
+      "properties": {
+        "activated": {
+          "description": "false si la ejecución quedó guardada pero no reemplazó a la vigente.",
+          "type": "boolean"
+        },
+        "active_run_id": {
+          "type": "number"
+        },
+        "classified": {
+          "type": "number"
+        },
+        "eligible": {
+          "type": "number"
+        },
+        "errors": {
+          "type": "number"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/definitions/ProviderName"
+        },
+        "run_id": {
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "partial"
+          ],
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "run_id",
+        "status",
+        "provider",
+        "model",
+        "classified",
+        "errors",
+        "eligible",
+        "truncated",
+        "activated",
+        "active_run_id"
+      ],
+      "type": "object"
+    },
+    "RunStatus": {
+      "enum": [
+        "running",
+        "completed",
+        "partial",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "SearchResult": {
+      "additionalProperties": false,
+      "properties": {
+        "fts_query": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/Message"
+          },
+          "type": "array"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "total",
+        "limit",
+        "offset",
+        "fts_query",
+        "items"
+      ],
+      "type": "object"
+    },
+    "SilentDay": {
+      "additionalProperties": false,
+      "properties": {
+        "day": {
+          "$ref": "#/definitions/IsoDay"
+        },
+        "weekday": {
+          "description": "0 = domingo … 6 = sábado.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "day",
+        "weekday"
+      ],
+      "type": "object"
+    },
+    "Stats": {
+      "additionalProperties": false,
+      "properties": {
+        "averages": {
+          "$ref": "#/definitions/Averages"
+        },
+        "chat": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "number"
+            },
+            "name": {
+              "type": "string"
+            },
+            "timezone": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "timezone"
+          ],
+          "type": "object"
+        },
+        "concentration": {
+          "$ref": "#/definitions/Concentration"
+        },
+        "conversation": {
+          "$ref": "#/definitions/Conversation"
+        },
+        "coverage": {
+          "additionalProperties": false,
+          "properties": {
+            "first_record": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LocalTimestamp"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "last_record": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LocalTimestamp"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "note": {
+              "type": "string"
+            },
+            "records": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "first_record",
+            "last_record",
+            "records",
+            "note"
+          ],
+          "type": "object"
+        },
+        "daily": {
+          "items": {
+            "$ref": "#/definitions/DailyPoint"
+          },
+          "type": "array"
+        },
+        "definitions": {
+          "$ref": "#/definitions/Definitions"
+        },
+        "domains": {
+          "items": {
+            "$ref": "#/definitions/DomainRow"
+          },
+          "type": "array"
+        },
+        "hour": {
+          "description": "24 valores; índice = hora.",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "media_by_kind": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "monthly": {
+          "items": {
+            "$ref": "#/definitions/MonthlyPoint"
+          },
+          "type": "array"
+        },
+        "period": {
+          "additionalProperties": false,
+          "properties": {
+            "calendar_days": {
+              "type": "number"
+            },
+            "first_day": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/IsoDay"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "first_message": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LocalTimestamp"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "from": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/IsoDay"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "last_day": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/IsoDay"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "last_message": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LocalTimestamp"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "to": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/IsoDay"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "from",
+            "to",
+            "first_message",
+            "last_message",
+            "first_day",
+            "last_day",
+            "calendar_days"
+          ],
+          "type": "object"
+        },
+        "system_by_subtype": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "totals": {
+          "$ref": "#/definitions/Totals"
+        },
+        "weekday": {
+          "description": "7 valores; índice 0 = domingo.",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "weekday_hour": {
+          "items": {
+            "$ref": "#/definitions/WeekdayHourCell"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "chat",
+        "period",
+        "coverage",
+        "totals",
+        "averages",
+        "conversation",
+        "concentration",
+        "daily",
+        "monthly",
+        "weekday",
+        "hour",
+        "weekday_hour",
+        "domains",
+        "media_by_kind",
+        "system_by_subtype",
+        "definitions"
+      ],
+      "type": "object"
+    },
+    "TopShare": {
+      "additionalProperties": false,
+      "properties": {
+        "denominator": {
+          "type": "number"
+        },
+        "messages": {
+          "type": "number"
+        },
+        "n": {
+          "type": "number"
+        },
+        "share": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "n",
+        "messages",
+        "denominator",
+        "share"
+      ],
+      "type": "object"
+    },
+    "Totals": {
+      "additionalProperties": false,
+      "properties": {
+        "active_authors": {
+          "type": "number"
+        },
+        "active_days": {
+          "type": "number"
+        },
+        "attributed_messages": {
+          "type": "number"
+        },
+        "author_labels": {
+          "type": "number"
+        },
+        "calendar_days": {
+          "type": "number"
+        },
+        "conversation_days": {
+          "type": "number"
+        },
+        "deleted_messages": {
+          "type": "number"
+        },
+        "distinct_domains": {
+          "type": "number"
+        },
+        "edited_messages": {
+          "type": "number"
+        },
+        "flagged_for_review": {
+          "type": "number"
+        },
+        "media_omitted_messages": {
+          "type": "number"
+        },
+        "messages_with_links": {
+          "type": "number"
+        },
+        "messages_with_text": {
+          "type": "number"
+        },
+        "participant_messages": {
+          "type": "number"
+        },
+        "polls": {
+          "type": "number"
+        },
+        "records": {
+          "type": "number"
+        },
+        "silent_days": {
+          "type": "number"
+        },
+        "system_notices": {
+          "type": "number"
+        },
+        "total_links": {
+          "type": "number"
+        },
+        "unrecognized": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "records",
+        "participant_messages",
+        "system_notices",
+        "unrecognized",
+        "flagged_for_review",
+        "messages_with_text",
+        "active_authors",
+        "author_labels",
+        "attributed_messages",
+        "active_days",
+        "calendar_days",
+        "conversation_days",
+        "silent_days",
+        "messages_with_links",
+        "total_links",
+        "distinct_domains",
+        "media_omitted_messages",
+        "deleted_messages",
+        "edited_messages",
+        "polls"
+      ],
+      "type": "object"
+    },
+    "WeekdayHourCell": {
+      "additionalProperties": false,
+      "properties": {
+        "hour": {
+          "type": "number"
+        },
+        "messages": {
+          "type": "number"
+        },
+        "weekday": {
+          "description": "0 = domingo … 6 = sábado.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "weekday",
+        "hour",
+        "messages"
+      ],
+      "type": "object"
+    }
+  }
+}
