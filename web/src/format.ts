@@ -24,3 +24,8 @@ export const pct = (x: number | null | undefined): string => (x == null ? "—" 
 export const pad2 = (x: number): string => String(x).padStart(2, "0");
 /** Mensaje legible de cualquier valor capturado en un catch. */
 export const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** "2026-10-08T14:03:22" -> "2026-10-08T14:03" (hora local del chat, tal como viene). */
+export const minute = (ts: string): string => ts.slice(0, 16);
+/** "2026-10-08T14:03:22Z" -> "2026-10-08 14:03" (UTC). */
+export const utcMinute = (iso: string): string => iso.replace("T", " ").slice(0, 16);

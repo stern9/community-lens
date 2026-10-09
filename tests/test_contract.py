@@ -181,8 +181,9 @@ def test_typescript_compiles_and_committed_build_is_current(tmp_path):
     tsc = str(ROOT / "node_modules" / ".bin" / "tsc")
     r = subprocess.run([tsc, "-p", "tsconfig.json", "--outDir", str(tmp_path / "dist")], cwd=ROOT, capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
-    built = sorted(p.name for p in (tmp_path / "dist").glob("*.js"))
-    assert built == sorted(p.name for p in (ROOT / "web" / "dist").glob("*.js"))
+    names = lambda d: sorted(str(p.relative_to(d)) for p in d.rglob("*.js"))
+    built = names(tmp_path / "dist")
+    assert built == names(ROOT / "web" / "dist"), "web/dist tiene archivos de más o de menos: corré `npm run build`"
     for name in built:
         assert (tmp_path / "dist" / name).read_text() == (ROOT / "web" / "dist" / name).read_text(), f"web/dist/{name} está desactualizado: corré `npm run build`"
     gen = ROOT / "node_modules" / ".bin" / "ts-json-schema-generator"

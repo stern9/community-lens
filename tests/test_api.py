@@ -90,7 +90,7 @@ def test_content_is_served_as_data_not_markup(client):
     assert "default-src 'self'" in csp and "unsafe-inline" not in csp and "unsafe-eval" not in csp
 
 
-FRONTEND = sorted((WEB / "src").glob("*.ts")) + sorted((WEB / "dist").glob("*.js"))
+FRONTEND = sorted((WEB / "src").rglob("*.ts")) + sorted((WEB / "dist").rglob("*.js"))
 
 
 def test_frontend_never_builds_html_from_strings():
@@ -112,7 +112,7 @@ def test_no_whatsapp_deep_links_are_invented():
 
 
 def test_compiled_frontend_is_served(client):
-    for name in ("app.js", "api.js", "charts.js", "dom.js", "format.js"):
+    for name in ("app.js", "router.js", "api.js", "charts.js", "dom.js", "format.js", "views/resumen.js", "components/message.js"):
         r = client.get(f"/dist/{name}")
         assert r.status_code == 200 and "javascript" in r.headers["content-type"], name
 
