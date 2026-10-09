@@ -15,13 +15,22 @@ La clasificación semántica y el periódico son capas opcionales y nunca calcul
 
 ## Arrancar
 
-Requiere Python 3.11+ (con SQLite compilado con FTS5, lo habitual).
+Requisitos:
+
+| Para | Hace falta |
+|---|---|
+| Correr la app (estadísticas, búsqueda, reportes) | Python 3.11 o superior, con SQLite compilado con FTS5 (lo habitual). Internet solo la primera vez, para instalar las dependencias. |
+| Generar el periódico | Además: una key de API de algún modelo en `.env` (ver `.env.example`) e internet, para leer las páginas enlazadas y consultar al modelo. |
+| Cambiar el frontend o regenerar los diagramas | Además: Node 18 o superior. Para solo usar la app no hace falta. |
+
+Probado en macOS; `run.sh` es un script de bash, así que en Windows hay que usar WSL o los comandos manuales de abajo.
 
 ```bash
 ./run.sh
 ```
 
-Crea `.venv`, instala dependencias la primera vez y sirve la app en **http://127.0.0.1:8765**.
+Crea `.venv`, instala las dependencias (la primera vez y cuando cambie `requirements.txt`) y sirve la app en
+**http://127.0.0.1:8765**. Se apaga con `Ctrl+C`.
 
 Equivalente manual:
 
@@ -103,7 +112,7 @@ Resultado de la última ejecución (2026-10-09): **66 passed**. Usan solo fixtur
 | `test_classify.py` | Reglas (multi-etiqueta, contexto acotado), registro de ejecuciones, correcciones humanas sin sobrescribir, bloqueos de Jev, forma de la solicitud a Jev |
 | `test_newspaper.py` | Tipos de enlace, vista previa sin red ni modelos, seudonimización, enlaces solo del chat (ids inventados descartados), consentimiento para lecturas, conteos por tema hechos por código, modo automático con varios modelos, importación de `.zip`, comando de terminal completo |
 | `test_contract.py` | Las respuestas reales de la API coinciden con los tipos de TypeScript (sin campos de más ni de menos); el TypeScript compila en modo estricto y `web/dist` está al día |
-| `test_api.py` | Flujo completo por HTTP sin Jev, cabeceras de seguridad, frontend (fuentes y compilado) sin `innerHTML`, sin enlaces inventados a WhatsApp, diagrama sin acceso a red |
+| `test_api.py` | Flujo completo por HTTP sin Jev, cabeceras de seguridad, frontend (fuentes y compilado, incluidas las subcarpetas) sin `innerHTML`, sin enlaces inventados a WhatsApp, diagrama sin acceso a red |
 
 ## Qué probar primero
 
@@ -215,7 +224,18 @@ El frontend está escrito en TypeScript con la configuración más estricta (`st
 | `dom.ts` | Construcción del DOM; el contenido de los chats solo puede entrar como texto |
 | `charts.ts` | Gráficos con Observable Plot |
 | `format.ts` | Formato de números, fechas y etiquetas |
-| `app.ts` | Vistas y enrutamiento |
+| `labels.ts` | Nombres legibles de los códigos de la API |
+| `state.ts` | Estado compartido: grupo y período elegidos, configuración |
+| `shell.ts` | El marco fijo de la página: zona de contenido, panel lateral, barra superior, avisos |
+| `router.ts` | Traduce el `#hash` en una vista; una entrada por pestaña |
+| `views/` | Una pantalla por archivo (`resumen`, `explorar`, `recursos`, `categorias`, `importar`, `reporte`, `periodico`, `contexto`) |
+| `components/` | Piezas que usan varias pantallas (`message.ts`: la tarjeta de un mensaje) |
+| `app.ts` | Punto de entrada: carga inicial y conexión de la barra superior con el enrutador |
+
+Las dependencias van en un solo sentido: `app` → `router` → `views` → `components` → (`state`, `shell`, `api`, `dom`…).
+Una vista no importa al enrutador ni a otra vista: recibe del enrutador sus parámetros y una función `refresh`
+para volver a dibujarse. Agregar una pantalla es crear un archivo en `views/` y sumar una línea en `router.ts`.
+Dentro de cada vista, la función exportada va primero y arma la pantalla con una función por sección.
 
 **Para correr la app no hace falta Node**: `web/dist/` está versionado. Node (18+) solo se necesita para
 modificar el frontend:
