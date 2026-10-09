@@ -381,11 +381,17 @@ def newspaper_page(edition_id: int, download: bool = False, con=Depends(db)):
 
 # ----------------------------------------------------------------- frontend --
 
+DIAGRAMS = {"": "flujo-de-datos.html", "periodico": "periodico.html"}
+
+
 @app.get("/como-funciona")
-def how_it_works():
-    """Diagrama de flujo de datos generado con Archify (HTML autocontenido, sin datos de chats).
-    Lleva scripts en línea, así que tiene su propia política: sin red y sin acceso a la API."""
-    f = ROOT / "docs" / "diagramas" / "flujo-de-datos.html"
+@app.get("/como-funciona/{name}")
+def how_it_works(name: str = ""):
+    """Diagramas de flujo de datos generados con Archify (HTML autocontenido, sin datos de chats).
+    Llevan scripts en línea, así que tienen su propia política: sin red y sin acceso a la API."""
+    if name not in DIAGRAMS:
+        raise HTTPException(404, "Ese diagrama no existe.")
+    f = ROOT / "docs" / "diagramas" / DIAGRAMS[name]
     if not f.exists():
         raise HTTPException(404, "Diagrama no generado; ver README.")
     return FileResponse(f, media_type="text/html; charset=utf-8", headers={"Content-Security-Policy": (

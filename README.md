@@ -1,6 +1,6 @@
 # Community Lens
 
-POC local para explorar historiales de comunidades a partir de exportaciones TXT de WhatsApp:
+POC local para explorar historiales de comunidades a partir de exportaciones de WhatsApp (`.zip` o `.txt`):
 estadísticas reproducibles, búsqueda de texto completo, categorías revisables y evidencia
 (mensaje original, contexto y ubicación en el archivo) para cada resultado.
 
@@ -91,7 +91,7 @@ la lectura se hace en Python y el diseño es una plantilla, para que cada edici�
 .venv/bin/python -m pytest -q
 ```
 
-Resultado de la última ejecución (2026-10-07): **57 passed**. Usan solo fixtures sintéticos
+Resultado de la última ejecución (2026-10-09): **66 passed**. Usan solo fixtures sintéticos
 (`tests/fixtures/`), una base temporal por prueba y ninguna llamada de red.
 
 | Archivo | Qué cubre |
@@ -101,18 +101,20 @@ Resultado de la última ejecución (2026-10-07): **57 passed**. Usan solo fixtur
 | `test_resources.py` | Agrupación de documentos por versión (la última es el número más alto, no la primera coincidencia), reenvíos de versiones viejas, enlaces por URL |
 | `test_stats_search.py` | Totales y denominadores, meses parciales, enlaces vs. mensajes con enlaces, FTS y filtros, contexto, reporte solo agregado y escapado |
 | `test_classify.py` | Reglas (multi-etiqueta, contexto acotado), registro de ejecuciones, correcciones humanas sin sobrescribir, bloqueos de Jev, forma de la solicitud a Jev |
+| `test_newspaper.py` | Tipos de enlace, vista previa sin red ni modelos, seudonimización, enlaces solo del chat (ids inventados descartados), consentimiento para lecturas, conteos por tema hechos por código, modo automático con varios modelos, importación de `.zip`, comando de terminal completo |
 | `test_contract.py` | Las respuestas reales de la API coinciden con los tipos de TypeScript (sin campos de más ni de menos); el TypeScript compila en modo estricto y `web/dist` está al día |
 | `test_api.py` | Flujo completo por HTTP sin Jev, cabeceras de seguridad, frontend (fuentes y compilado) sin `innerHTML`, sin enlaces inventados a WhatsApp, diagrama sin acceso a red |
 
 ## Qué probar primero
 
-1. **Importar** → elegí un TXT. Revisá el diagnóstico, el orden de fecha detectado (con su evidencia) y el destino sugerido.
+1. **Importar** → elegí el `.zip` o el `.txt` exportado. Revisá el diagnóstico, el orden de fecha detectado (con su evidencia) y el destino sugerido.
 2. **Resumen** → métricas con denominador, actividad por mes/día (los meses parciales salen rayados), autores, dominios.
 3. **Recursos** → buscá un documento por nombre: muestra la última versión, las anteriores, quién las compartió y dónde están en la conversación.
 4. **Explorar** → buscá un término, filtrá por autor o categoría, abrí **Ver contexto** y probá **Copiar referencia**.
 5. **Categorías** → ejecutá *Clasificar con reglas*, entrá a una categoría y corregí un mensaje.
 6. **Reporte** → abrí o descargá el HTML/TXT agregado.
 7. Reimportá el mismo archivo: no se duplica nada.
+8. **Generar periódico** (requiere una key en `.env`) → elegí "Última semana", revisá qué enlaces entran y qué sale de tu máquina, y generá.
 
 ## Arquitectura
 
@@ -129,6 +131,7 @@ community_lens/
   newspaper.py   Periódico: selección de enlaces, lectura de páginas, seudonimización, armado de la edición.
   newspaper_html.py + newspaper.css   Plantilla fija del periódico (HTML autocontenido).
   llm.py         Modelos de lenguaje sin atarse a un proveedor (Claude, OpenAI o compatible, Gemini).
+  cli.py         Periódico desde la terminal: importar, generar y publicar el sitio estático.
   api.py         FastAPI + frontend estático.
 web/src/         Frontend en TypeScript estricto (tipos de la API, cliente, DOM, gráficos, vistas).
 web/dist/        JavaScript compilado desde web/src; versionado para correr sin Node.
@@ -191,7 +194,11 @@ node /tmp/archify/archify/bin/archify.mjs validate dataflow docs/diagramas/flujo
 node /tmp/archify/archify/bin/archify.mjs render   dataflow docs/diagramas/flujo-de-datos.dataflow.json docs/diagramas/flujo-de-datos.html
 ```
 
-El diagrama no contiene datos de ningún chat. Como lleva scripts en línea, la app lo sirve con una política
+El periódico tiene su propio diagrama, hecho igual: `docs/diagramas/periodico.html` (y `periodico.png` para
+compartir), con fuente en `periodico.dataflow.json`. Muestra qué pone el código y qué el modelo, qué sale de
+la máquina y qué pasos son todavía manuales. En la app se abre con "Cómo se arma ↗", junto a "Generar periódico" (`/como-funciona/periodico`).
+
+Los diagramas no contienen datos de ningún chat. Como llevan scripts en línea, la app sirve el suyo con una política
 propia que le impide hacer conexiones de red o llamar a la API (`connect-src 'none'`); el resto de la app
 conserva su política estricta sin scripts en línea.
 
@@ -368,6 +375,8 @@ medida, así que no debe leerse como probabilidad calibrada.
 - Reconciliación manual de alias (unir / separar).
 - Reporte agregado en HTML y texto; los identificadores de autor solo se incluyen si se pide.
 - Eliminación de un chat y sus datos derivados.
+- Periódico por rango de fechas: enlaces clasificados por regla fija, páginas leídas desde la máquina, redacción con el modelo configurado (Claude, OpenAI o compatible, Gemini; automático si hay varios), lecturas opcionales de la conversación con seudónimos y confirmación, ediciones guardadas y descargables.
+- Importación de `.zip` de WhatsApp y comando de terminal que importa, genera y escribe un sitio estático.
 - Diagrama interactivo del flujo de datos ("Cómo funciona"), generado con Archify.
 - Gráficos con Observable Plot: barras por mes, calendario diario, mapa de calor día × hora y categorías por mes.
 
@@ -375,7 +384,7 @@ medida, así que no debe leerse como probabilidad calibrada.
 
 - Medir la exactitud de Jev en español contra etiquetas propias (la conexión ya está verificada).
 - Proveedor OpenAI Decisions.
-- Periódico: los proveedores OpenAI y Gemini están implementados pero no se probaron contra el servicio real (solo Claude). Generación en segundo plano con progreso. Editar o quitar una nota antes de compartir.
+- Periódico: los proveedores OpenAI y Gemini están implementados pero no se probaron contra el servicio real (solo Claude). Generación en segundo plano con progreso. Editar o quitar una nota antes de compartir. Paso de borrador y aprobación antes de publicar, y una versión pública que deje fuera lo que viene de la conversación. Nada corre programado todavía: exportar el chat y subir el sitio se hacen a mano.
 - Importar una exportación "con archivos" sobre una "sin archivos" del mismo chat duplica los mensajes con adjunto (el texto del marcador cambia); por ahora conviene importarla como grupo aparte.
 - Importar el formato `chat.md` (hoy `.zip` y `.txt`).
 - Más patrones de avisos en español: los archivos reales disponibles estaban en inglés, así que los patrones en español solo se validaron con fixtures sintéticos.

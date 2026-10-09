@@ -118,12 +118,14 @@ def test_compiled_frontend_is_served(client):
 
 
 def test_diagram_page_cannot_reach_network_or_api(client):
-    r = client.get("/como-funciona")
-    assert r.status_code == 200 and "Community Lens" in r.text
-    csp = r.headers["content-security-policy"]
-    assert "connect-src 'none'" in csp and "default-src 'none'" in csp
-    # autocontenido: ningún recurso remoto
-    assert not re.search(r'(?:src|href)="https?://(?!www\.w3\.org)', r.text)
+    for path in ("/como-funciona", "/como-funciona/periodico"):
+        r = client.get(path)
+        assert r.status_code == 200 and "Community Lens" in r.text, path
+        csp = r.headers["content-security-policy"]
+        assert "connect-src 'none'" in csp and "default-src 'none'" in csp
+        # autocontenido: ningún recurso remoto
+        assert not re.search(r'(?:src|href)="https?://(?!www\.w3\.org)', r.text), path
+    assert client.get("/como-funciona/otro").status_code == 404
     # y la app principal conserva su política estricta
     assert "unsafe-inline" not in client.get("/").headers["content-security-policy"]
 
