@@ -441,7 +441,7 @@ function dateOrderBox(p, onPick) {
 }
 async function viewImportar() {
     const out = h("div");
-    const file = h("input", { type: "file", accept: ".txt,text/plain" });
+    const file = h("input", { type: "file", accept: ".txt,.zip,text/plain,application/zip" });
     const tz = h("input", { value: config().default_timezone, list: "tzlist", size: 24 });
     const zones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : ["America/Costa_Rica", "UTC"];
     const tzlist = h("datalist", { id: "tzlist" }, zones.map((z) => h("option", { value: z })));
@@ -544,7 +544,7 @@ async function viewImportar() {
         }));
         put(admin, h("h2", null, "Grupos importados"), blocks.length ? blocks : h("p", { class: "muted" }, "Todavía no hay grupos."));
     }
-    put(view, h("section", { class: "card" }, h("h2", null, "Importar exportación de WhatsApp (.txt)"), h("p", null, h("small", null, "El archivo se procesa en esta máquina y se guarda en una base SQLite local. El original no se modifica. Reimportar el mismo archivo no duplica nada.")), h("div", { class: "row end" }, h("label", { class: "field" }, "Archivo TXT", file), h("label", { class: "field" }, "Zona horaria de las horas del archivo", tz), tzlist), out), h("section", null, admin));
+    put(view, h("section", { class: "card" }, h("h2", null, "Importar exportación de WhatsApp (.zip o .txt)"), h("p", null, h("small", null, "El archivo se procesa en esta máquina y se guarda en una base SQLite local. El original no se modifica. Reimportar el mismo archivo no duplica nada.")), h("div", { class: "row end" }, h("label", { class: "field" }, "Archivo TXT", file), h("label", { class: "field" }, "Zona horaria de las horas del archivo", tz), tzlist), out), h("section", null, admin));
     await renderChatsAdmin();
 }
 // ------------------------------------------------------------------ reporte --
@@ -567,8 +567,106 @@ async function viewReporte() {
     put(view, h("section", { class: "card" }, h("h2", null, "Reporte agregado para compartir"), h("p", null, h("small", null, "Contiene solo datos agregados del grupo y período elegidos arriba. No incluye mensajes ni citas, y no se publica en ningún lado: vos decidís a quién enviarlo.")), h("label", { class: "row" }, inc, "Incluir los 10 identificadores con más mensajes (nombres o teléfonos: datos personales)"), h("div", { class: "actions" }, h("button", { onclick: () => { window.open(api.reportUrl(scope(), "html", inc.checked), "_blank", "noopener"); } }, "Abrir HTML"), h("button", { class: "ghost", onclick: () => { location.href = api.reportUrl(scope(), "html", inc.checked, true); } }, "Descargar HTML"), h("button", { class: "ghost", onclick: () => { location.href = api.reportUrl(scope(), "txt", inc.checked, true); } }, "Descargar TXT"), h("button", { class: "ghost", onclick: () => void copy() }, "Copiar texto")), pre));
     await refresh();
 }
+// ---------------------------------------------------------------- periódico --
+const isoDay = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+/** Día `days` antes de `day` ("AAAA-MM-DD"), al mediodía para esquivar cambios de horario. */
+function daysBefore(day, days) {
+    const d = new Date(day + "T12:00:00");
+    d.setDate(d.getDate() - days);
+    return isoDay(d);
+}
+const PRESETS = [{ key: "week", label: "Última semana", days: 6 }, { key: "fortnight", label: "Últimas 2 semanas", days: 13 }, { key: "month", label: "Último mes", days: 29 }];
+const LINK_KIND = { article: "Artículos", social: "Redes sociales", tool: "Sitios y herramientas" };
+async function viewPeriodico() {
+    if (state.chatId == null)
+        return emptyState();
+    const chatId = state.chatId;
+    const chat = state.chats.find((c) => c.id === chatId);
+    const lastDay = chat?.last_record?.slice(0, 10) ?? isoDay(new Date());
+    const from = h("input", { type: "date", value: state.from || daysBefore(lastDay, 6), "aria-label": "Desde" });
+    const to = h("input", { type: "date", value: state.to || lastDay, "aria-label": "Hasta" });
+    const maxSel = h("select", null, [5, 8, 12, 15].map((x) => h("option", { value: x, selected: x === 8 }, String(x))));
+    const orderSel = h("select", null, h("option", { value: "recent" }, "Los más recientes"), h("option", { value: "shared" }, "Los más compartidos"));
+    const presets = h("div", { class: "presets" });
+    const found = h("div"), models = h("div"), result = h("div"), saved = h("div");
+    const go = h("button", { type: "button", disabled: true }, "Generar periódico");
+    let current = null;
+    let editorSel = null;
+    let readerBoxes = [];
+    let consent = null;
+    const markPreset = () => {
+        presets.querySelectorAll("button").forEach((b) => b.classList.toggle("on", to.value === lastDay && from.value === daysBefore(lastDay, Number(b.dataset["days"]))));
+    };
+    PRESETS.forEach((p) => presets.append(h("button", { type: "button", class: "ghost", "data-days": p.days,
+        onclick: () => { from.value = daysBefore(lastDay, p.days); to.value = lastDay; void refresh(); } }, p.label)));
+    const syncGo = () => {
+        const readers = readerBoxes.filter((b) => b.checked).length;
+        go.disabled = !current || !current.providers.length || !current.links.article.length || (readers > 0 && !consent?.checked);
+    };
+    function renderModels(p) {
+        readerBoxes = [];
+        if (!p.providers.length) {
+            editorSel = null;
+            consent = null;
+            put(models, h("p", { class: "error" }, "No hay ningún modelo configurado."), h("p", null, h("small", null, "Agregá una key en el archivo .env (ANTHROPIC_API_KEY, u OPENAI_API_KEY + OPENAI_MODEL, o GEMINI_API_KEY + GEMINI_MODEL) y reiniciá la app. La key se queda en tu máquina; nunca llega al navegador.")), p.missing_model.length ? h("p", { class: "error" }, `Hay key de ${p.missing_model.join(" y ")} pero falta indicar el modelo en .env.`) : null);
+            return;
+        }
+        const name = (x) => `${x.label} (${x.model})`;
+        editorSel = h("select", null, p.providers.length > 1 ? h("option", { value: "auto" }, `Automático: ${p.providers[0].label}, y si falla el siguiente`) : null, p.providers.map((x) => h("option", { value: x.name }, name(x))));
+        consent = h("input", { type: "checkbox", onchange: syncGo });
+        const readers = p.providers.map((x) => {
+            const box = h("input", { type: "checkbox", value: x.name, onchange: syncGo });
+            readerBoxes.push(box);
+            return h("label", { class: "row" }, box, `La visión de ${name(x)}`);
+        });
+        const pages = p.links.article.length + p.links.social.length + p.links.tool.length;
+        put(models, h("label", { class: "field" }, "Modelo que redacta los resúmenes", editorSel), h("div", { class: "sendbox" }, h("b", null, "Qué sale de tu máquina al generar"), h("ul", null, h("li", null, `Siempre: el texto público de hasta ${n(pages)} páginas enlazadas va al modelo que redacta${p.providers.length > 1 ? " (en automático, también al siguiente si el primero falla)" : ""}. Las páginas se descargan desde esta máquina.`), h("li", null, "Nunca: nombres, teléfonos ni quién compartió cada enlace."), h("li", null, `Solo si activás una lectura: ${n(p.transcript.messages)} mensajes del período (${n(p.transcript.characters)} caracteres) con seudónimos en lugar de nombres, sin teléfonos, correos ni menciones. Un nombre escrito dentro de un mensaje sí podría ir.`))), h("p", null, h("b", null, "Lecturas de la conversación"), " ", kind("auto", "interpretación del modelo"), h("br"), h("small", null, "Opcional. Cada modelo elegido escribe dos párrafos sobre de qué se habló. Los conteos por tema los hace el código.")), readers, h("label", { class: "row" }, consent, "Confirmo que quiero enviar esos mensajes seudonimizados a los modelos marcados."), p.missing_model.length ? h("p", { class: "muted" }, `Hay key de ${p.missing_model.join(" y ")} sin modelo indicado en .env; no se puede usar todavía.`) : null);
+    }
+    async function refresh() {
+        markPreset();
+        current = null;
+        syncGo();
+        if (!from.value || !to.value || from.value > to.value) {
+            put(found, h("p", { class: "error" }, "Elegí un rango de fechas válido."));
+            return;
+        }
+        const p = await api.previewNewspaper(chatId, from.value, to.value, orderSel.value === "shared" ? "shared" : "recent", Number(maxSel.value));
+        current = p;
+        const f = p.facts, lists = ["article", "social", "tool"];
+        put(found, h("p", null, kind("fact", "hecho"), ` ${n(f.messages)} mensajes de ${n(f.participants)} participantes en el rango; ${n(f.messages_with_links)} con enlaces.`), p.links.article.length ? null : h("p", { class: "error" }, "No hay artículos compartidos en ese rango: no se puede armar una edición."), lists.map((k) => h("details", null, h("summary", null, `${LINK_KIND[k]}: ${n(p.links[k].length)} entran` + (p.links_total[k] > p.links[k].length ? ` de ${n(p.links_total[k])} compartidos` : "")), h("ol", { class: "linklist" }, p.links[k].map((l) => h("li", null, `${l.shared} · `, h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer" }, l.url)))))), p.links_skipped ? h("p", null, h("small", null, `${n(p.links_skipped)} enlaces se omiten por no ser contenido (invitaciones, llamadas, formularios, archivos).`)) : null);
+        renderModels(p);
+        syncGo();
+    }
+    const editionRow = (e) => h("li", null, `${e.from} a ${e.to} · generada ${utcMinute(e.created_at)} UTC · ${e.editor.label}${e.sent.pages_tried.length ? ` (falló ${e.sent.pages_tried.join(" y ")})` : ""} · `, e.sent.chat_messages ? `${n(e.sent.chat_messages)} mensajes enviados a ${e.sent.chat_to.join(" y ")} · ` : "sin texto del chat enviado · ", h("a", { href: api.editionUrl(e.id), target: "_blank", rel: "noopener", class: "btnlink" }, "Abrir"), " ", h("a", { href: api.editionUrl(e.id, true), class: "btnlink" }, "Descargar HTML"));
+    async function loadSaved() {
+        const list = await api.getEditions(chatId);
+        put(saved, list.length ? h("ul", { class: "editions" }, list.map(editionRow)) : h("p", { class: "muted" }, "Todavía no hay ediciones de este grupo."));
+    }
+    go.addEventListener("click", () => void (async () => {
+        if (!current || !editorSel)
+            return;
+        go.disabled = true;
+        put(result, h("p", { class: "muted" }, "Generando… se descargan las páginas y el modelo redacta. Puede tardar de uno a tres minutos; no cierres esta pestaña."));
+        try {
+            const r = await api.generateNewspaper({
+                chat_id: chatId, from: from.value, to: to.value, editor: editorSel.value, readers: readerBoxes.filter((b) => b.checked).map((b) => b.value),
+                consent_chat: Boolean(consent?.checked), order: orderSel.value === "shared" ? "shared" : "recent", max_articles: Number(maxSel.value),
+            });
+            put(result, h("p", null, h("b", null, "Edición lista. "), `${n(r.articles)} artículos, ${n(r.socials)} publicaciones en redes, ${n(r.tools)} sitios` +
+                (r.unread ? `, ${n(r.unread)} que no se pudieron leer` : "") + (r.readings ? ` y ${n(r.readings)} lectura${r.readings === 1 ? "" : "s"} de la conversación.` : ".")), r.warnings.map((w) => h("p", { class: "error" }, w)), h("p", null, h("small", null, "Revisala antes de compartirla: los resúmenes son automáticos y pueden tener errores.")), h("div", { class: "actions" }, h("a", { href: api.editionUrl(r.id), target: "_blank", rel: "noopener", class: "btnlink" }, "Abrir el periódico"), h("a", { href: api.editionUrl(r.id, true), class: "btnlink" }, "Descargar HTML")));
+            await loadSaved();
+        }
+        catch (e) {
+            put(result, h("p", { class: "error" }, "No se pudo generar: " + errMsg(e)));
+        }
+        syncGo();
+    })());
+    [from, to, maxSel, orderSel].forEach((el) => el.addEventListener("change", () => void refresh()));
+    put(view, h("section", { class: "card" }, h("h2", null, "Periódico de la comunidad", kind("auto", "redacción automática")), h("p", null, h("small", null, "Arma una página para ponerse al día: los enlaces compartidos en un rango de fechas, resumidos por el modelo que elijás. Los enlaces, las fechas y las cifras salen del chat importado; los textos los escribe el modelo.")), h("h3", null, "1. Rango de fechas"), presets, h("div", { class: "row end" }, h("label", { class: "field" }, "Desde", from), h("label", { class: "field" }, "Hasta", to), h("label", { class: "field" }, "Artículos (máximo)", maxSel), h("label", { class: "field" }, "Prioridad", orderSel)), h("p", null, h("small", null, "Este rango es propio del periódico; no cambia el filtro de fechas de arriba.")), h("h3", null, "2. Qué entra"), found, h("h3", null, "3. Modelo"), models, h("div", { class: "actions" }, go), result), h("section", { class: "card" }, h("h2", null, "Ediciones guardadas"), saved));
+    await Promise.all([refresh(), loadSaved()]);
+}
 // ------------------------------------------------------------------- router --
-const TABS = ["resumen", "explorar", "recursos", "categorias", "importar", "reporte"];
+const TABS = ["resumen", "explorar", "recursos", "categorias", "importar", "reporte", "periodico"];
 const isTab = (x) => TABS.some((t) => t === x);
 function emptyState() {
     put(view, h("section", { class: "card" }, h("h2", null, "Todavía no hay grupos importados"), h("p", null, "Empezá importando una exportación TXT de WhatsApp."), h("a", { href: "#/importar", class: "btnlink" }, "Importar un chat")));
@@ -595,9 +693,10 @@ async function route(hash) {
     const tab = isTab(path) ? path : "resumen";
     const params = new URLSearchParams(query ?? "");
     document.querySelectorAll("#tabs a[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset["tab"] === tab));
+    document.querySelectorAll("#tabs .mode").forEach((m) => m.classList.toggle("on", m.querySelector("a.on") !== null));
     const views = {
         resumen: () => viewResumen(params), explorar: () => viewExplorar(params),
-        recursos: () => viewRecursos(params), categorias: viewCategorias, importar: viewImportar, reporte: viewReporte,
+        recursos: () => viewRecursos(params), categorias: viewCategorias, importar: viewImportar, reporte: viewReporte, periodico: viewPeriodico,
     };
     const mine = ++routeToken;
     try {

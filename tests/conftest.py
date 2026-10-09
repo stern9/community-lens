@@ -14,6 +14,8 @@ def isolated_env(tmp_path, monkeypatch):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("JEV_ENABLED", "0")
     monkeypatch.setenv("TYPESAFE_API_KEY", "")
+    for k in [f"{p}_{v}" for p in ("ANTHROPIC", "OPENAI", "GEMINI") for v in ("API_KEY", "MODEL", "LABEL")] + ["OPENAI_BASE_URL"]:
+        monkeypatch.setenv(k, "")  # vacío (no borrado): así .env no las repone
     from community_lens.config import settings
     settings.cache_clear()
     yield

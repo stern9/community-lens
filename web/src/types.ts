@@ -547,6 +547,91 @@ export interface ResourceLibrary {
   note: string;
 }
 
+// ---------------------------------------------------------------- periódico --
+
+export type NewspaperLinkKind = "article" | "social" | "tool";
+
+/** Un enlace compartido en el rango, ya clasificado por regla fija (no por un modelo). */
+export interface NewspaperLink {
+  url: string;
+  domain: string;
+  /** Día local en que se compartió por última vez. */
+  shared: IsoDay;
+  shares: number;
+  kind: NewspaperLinkKind;
+}
+
+/** Proveedor de modelo de lenguaje configurado en .env. La key nunca viaja al navegador. */
+export interface LlmProvider {
+  name: "anthropic" | "openai" | "gemini";
+  label: string;
+  model: string;
+}
+
+export interface NewspaperFacts {
+  messages: number;
+  participants: number;
+  messages_with_links: number;
+  busiest_day: IsoDay | null;
+  busiest_day_messages: number;
+}
+
+/** Qué entraría en una edición y qué saldría de la máquina. Calcularla no envía nada. */
+export interface NewspaperPreview {
+  from: IsoDay;
+  to: IsoDay;
+  facts: NewspaperFacts;
+  links: { article: NewspaperLink[]; social: NewspaperLink[]; tool: NewspaperLink[] };
+  links_total: { article: number; social: number; tool: number };
+  links_skipped: number;
+  providers: LlmProvider[];
+  /** Proveedores con key pero sin nombre de modelo en .env. */
+  missing_model: string[];
+  transcript: { messages: number; characters: number };
+}
+
+/** Lo que salió de la máquina al generar una edición. */
+export interface NewspaperSent {
+  pages_to: string;
+  /** Modelos que recibieron el texto de las páginas y fallaron antes del que redactó. */
+  pages_tried: string[];
+  pages: number;
+  chat_messages: number;
+  chat_to: string[];
+}
+
+export interface NewspaperRequest {
+  chat_id: number;
+  from: IsoDay;
+  to: IsoDay;
+  editor: string;
+  readers: string[];
+  consent_chat: boolean;
+  order: "recent" | "shared";
+  max_articles: number;
+}
+
+export interface NewspaperResult {
+  id: number;
+  sent: NewspaperSent;
+  warnings: string[];
+  articles: number;
+  socials: number;
+  tools: number;
+  unread: number;
+  readings: number;
+}
+
+export interface NewspaperEdition {
+  id: number;
+  from: IsoDay;
+  to: IsoDay;
+  /** Instante UTC, "AAAA-MM-DDTHH:MM:SSZ". */
+  created_at: string;
+  editor: LlmProvider;
+  sent: NewspaperSent;
+}
+
 // ------------------------------------------------------------ clasificación --
 
 export interface RunConfig {

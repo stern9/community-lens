@@ -110,3 +110,17 @@ legend { font-size: 13px; color: var(--muted); padding: 0 6px; }
 .mini h3 { margin: 4px 0 0; font-size: 14px; }
 .authors td select { max-width: 170px; }
 .authors td:nth-child(2), .authors td:nth-child(7), .authors th { white-space: nowrap; }
+
+/* Navegación en dos modos: explorar lo calculado, o generar el periódico (usa un modelo). */
+.tabs { gap: 14px; align-items: end; }
+.mode { display: flex; align-items: end; gap: 2px; padding-left: 10px; border-left: 3px solid var(--line); }
+.mode-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 8px 6px 9px 0; white-space: nowrap; }
+.mode[data-mode="stats"] { border-left-color: var(--fact); }
+.mode[data-mode="paper"] { border-left-color: var(--auto); }
+.mode.on .mode-label { color: var(--text); font-weight: 600; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.presets button.on { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+.sendbox { border-left: 3px solid var(--auto); padding: 6px 10px; margin: 10px 0; background: var(--bg); border-radius: 0 6px 6px 0; }
+.sendbox ul { margin: 4px 0 0; padding-left: 18px; }
+.linklist { margin: 6px 0 0; padding-left: 18px; font-size: 13px; overflow-wrap: anywhere; }
+.editions li { margin: 6px 0; }

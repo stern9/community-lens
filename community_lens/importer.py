@@ -75,6 +75,31 @@ def decode(data: bytes) -> tuple[str, list[str]]:
     return text, warnings
 
 
+MAX_TXT_BYTES = 300_000_000
+
+
+def unzip_chat(data: bytes, file_name: str) -> tuple[bytes, str]:
+    """Si `data` es el .zip que exporta WhatsApp, devuelve el TXT de adentro; si no, lo deja igual.
+    Solo se abre la entrada de texto: fotos, audios y demás adjuntos se ignoran."""
+    if not data.startswith(b"PK"):
+        return data, file_name
+    import io
+    import zipfile
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            texts = [i for i in z.infolist() if i.filename.lower().endswith(".txt") and not i.is_dir()]
+            if not texts:
+                raise ImportError_("zip_without_txt", "El .zip no trae ningún archivo .txt de chat.")
+            entry = next((i for i in texts if i.filename.rsplit("/", 1)[-1] == "_chat.txt"), max(texts, key=lambda i: i.file_size))
+            if entry.file_size > MAX_TXT_BYTES:
+                raise ImportError_("zip_too_large", "El TXT dentro del .zip es demasiado grande.")
+            inner = entry.filename.rsplit("/", 1)[-1]
+            # "_chat.txt" no dice nada: el nombre del grupo suele estar en el del .zip.
+            return z.read(entry), (file_name.rsplit(".", 1)[0] + ".txt") if inner == "_chat.txt" else inner
+    except zipfile.BadZipFile:
+        raise ImportError_("bad_zip", "El archivo parece un .zip pero no se pudo abrir.") from None
+
+
 def suggest_name(file_name: str) -> str:
     n = Path(file_name).stem
     n = re.sub(r"^(WhatsApp Chat (?:with|-)\s*|Chat de WhatsApp con\s*|_chat$)", "", n, flags=re.I).strip()

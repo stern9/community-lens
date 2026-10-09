@@ -70,3 +70,7 @@ export const startRun = (s, provider, consent) => sendJson("/api/classify/runs",
 export const activateRun = (runId) => sendJson(`/api/classify/runs/${runId}/activate`, {});
 export const reportUrl = (s, format, includeAuthors, download = false) => "/api/report?" + qs({ chat_id: s.chat_id, from: s.from, to: s.to, format, include_authors: includeAuthors && "true", download: download && "true" });
 export const getReportText = async (s, includeAuthors) => (await request(reportUrl(s, "txt", includeAuthors))).text();
+export const previewNewspaper = (chatId, from, to, order, maxArticles) => getJson("/api/newspaper/preview?" + qs({ chat_id: chatId, from, to, order, max_articles: maxArticles }));
+export const generateNewspaper = (req) => sendJson("/api/newspaper/editions", req);
+export const getEditions = (chatId) => getJson("/api/newspaper/editions?" + qs({ chat_id: chatId }));
+export const editionUrl = (id, download = false) => `/periodico/${id}` + (download ? "?download=true" : "");

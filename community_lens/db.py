@@ -148,6 +148,30 @@ CREATE TABLE IF NOT EXISTS human_labels (
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_human_msg ON human_labels(message_id);
+
+-- Páginas enlazadas ya leídas (texto limpio), para no volver a descargarlas en cada edición.
+CREATE TABLE IF NOT EXISTS pages (
+    url         TEXT PRIMARY KEY,
+    kind        TEXT NOT NULL,           -- article | social | tool
+    status      TEXT NOT NULL,           -- ok | failed
+    title       TEXT NOT NULL DEFAULT '',
+    text        TEXT NOT NULL DEFAULT '',
+    reason      TEXT,
+    fetched_at  TEXT NOT NULL
+);
+
+-- Ediciones del periódico. data = contenido estructurado; html = página autocontenida lista para compartir.
+CREATE TABLE IF NOT EXISTS editions (
+    id          INTEGER PRIMARY KEY,
+    chat_id     INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    date_from   TEXT NOT NULL,
+    date_to     TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    editor      TEXT NOT NULL,           -- JSON: proveedor y modelo que redactó
+    sent        TEXT NOT NULL,           -- JSON: qué salió de la máquina y hacia dónde
+    data        TEXT NOT NULL,
+    html        TEXT NOT NULL
+);
 """
 
 

@@ -1784,6 +1784,32 @@
       ],
       "type": "object"
     },
+    "LlmProvider": {
+      "additionalProperties": false,
+      "description": "Proveedor de modelo de lenguaje configurado en .env. La key nunca viaja al navegador.",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "name": {
+          "enum": [
+            "anthropic",
+            "openai",
+            "gemini"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "model"
+      ],
+      "type": "object"
+    },
     "LocalTimestamp": {
       "description": "Fecha local \"AAAA-MM-DD HH:MM:SS\".",
       "type": "string"
@@ -2020,6 +2046,346 @@
         "covered_to",
         "days_in_month",
         "days_covered"
+      ],
+      "type": "object"
+    },
+    "NewspaperEdition": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "description": "Instante UTC, \"AAAA-MM-DDTHH:MM:SSZ\".",
+          "type": "string"
+        },
+        "editor": {
+          "$ref": "#/definitions/LlmProvider"
+        },
+        "from": {
+          "$ref": "#/definitions/IsoDay"
+        },
+        "id": {
+          "type": "number"
+        },
+        "sent": {
+          "$ref": "#/definitions/NewspaperSent"
+        },
+        "to": {
+          "$ref": "#/definitions/IsoDay"
+        }
+      },
+      "required": [
+        "id",
+        "from",
+        "to",
+        "created_at",
+        "editor",
+        "sent"
+      ],
+      "type": "object"
+    },
+    "NewspaperFacts": {
+      "additionalProperties": false,
+      "properties": {
+        "busiest_day": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDay"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "busiest_day_messages": {
+          "type": "number"
+        },
+        "messages": {
+          "type": "number"
+        },
+        "messages_with_links": {
+          "type": "number"
+        },
+        "participants": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "messages",
+        "participants",
+        "messages_with_links",
+        "busiest_day",
+        "busiest_day_messages"
+      ],
+      "type": "object"
+    },
+    "NewspaperLink": {
+      "additionalProperties": false,
+      "description": "Un enlace compartido en el rango, ya clasificado por regla fija (no por un modelo).",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/NewspaperLinkKind"
+        },
+        "shared": {
+          "$ref": "#/definitions/IsoDay",
+          "description": "Día local en que se compartió por última vez."
+        },
+        "shares": {
+          "type": "number"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "domain",
+        "shared",
+        "shares",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "NewspaperLinkKind": {
+      "enum": [
+        "article",
+        "social",
+        "tool"
+      ],
+      "type": "string"
+    },
+    "NewspaperPreview": {
+      "additionalProperties": false,
+      "description": "Qué entraría en una edición y qué saldría de la máquina. Calcularla no envía nada.",
+      "properties": {
+        "facts": {
+          "$ref": "#/definitions/NewspaperFacts"
+        },
+        "from": {
+          "$ref": "#/definitions/IsoDay"
+        },
+        "links": {
+          "additionalProperties": false,
+          "properties": {
+            "article": {
+              "items": {
+                "$ref": "#/definitions/NewspaperLink"
+              },
+              "type": "array"
+            },
+            "social": {
+              "items": {
+                "$ref": "#/definitions/NewspaperLink"
+              },
+              "type": "array"
+            },
+            "tool": {
+              "items": {
+                "$ref": "#/definitions/NewspaperLink"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "article",
+            "social",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "links_skipped": {
+          "type": "number"
+        },
+        "links_total": {
+          "additionalProperties": false,
+          "properties": {
+            "article": {
+              "type": "number"
+            },
+            "social": {
+              "type": "number"
+            },
+            "tool": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "article",
+            "social",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "missing_model": {
+          "description": "Proveedores con key pero sin nombre de modelo en .env.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "providers": {
+          "items": {
+            "$ref": "#/definitions/LlmProvider"
+          },
+          "type": "array"
+        },
+        "to": {
+          "$ref": "#/definitions/IsoDay"
+        },
+        "transcript": {
+          "additionalProperties": false,
+          "properties": {
+            "characters": {
+              "type": "number"
+            },
+            "messages": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "messages",
+            "characters"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "facts",
+        "links",
+        "links_total",
+        "links_skipped",
+        "providers",
+        "missing_model",
+        "transcript"
+      ],
+      "type": "object"
+    },
+    "NewspaperRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "chat_id": {
+          "type": "number"
+        },
+        "consent_chat": {
+          "type": "boolean"
+        },
+        "editor": {
+          "type": "string"
+        },
+        "from": {
+          "$ref": "#/definitions/IsoDay"
+        },
+        "max_articles": {
+          "type": "number"
+        },
+        "order": {
+          "enum": [
+            "recent",
+            "shared"
+          ],
+          "type": "string"
+        },
+        "readers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "to": {
+          "$ref": "#/definitions/IsoDay"
+        }
+      },
+      "required": [
+        "chat_id",
+        "from",
+        "to",
+        "editor",
+        "readers",
+        "consent_chat",
+        "order",
+        "max_articles"
+      ],
+      "type": "object"
+    },
+    "NewspaperResult": {
+      "additionalProperties": false,
+      "properties": {
+        "articles": {
+          "type": "number"
+        },
+        "id": {
+          "type": "number"
+        },
+        "readings": {
+          "type": "number"
+        },
+        "sent": {
+          "$ref": "#/definitions/NewspaperSent"
+        },
+        "socials": {
+          "type": "number"
+        },
+        "tools": {
+          "type": "number"
+        },
+        "unread": {
+          "type": "number"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "sent",
+        "warnings",
+        "articles",
+        "socials",
+        "tools",
+        "unread",
+        "readings"
+      ],
+      "type": "object"
+    },
+    "NewspaperSent": {
+      "additionalProperties": false,
+      "description": "Lo que salió de la máquina al generar una edición.",
+      "properties": {
+        "chat_messages": {
+          "type": "number"
+        },
+        "chat_to": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pages": {
+          "type": "number"
+        },
+        "pages_to": {
+          "type": "string"
+        },
+        "pages_tried": {
+          "description": "Modelos que recibieron el texto de las páginas y fallaron antes del que redactó.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "pages_to",
+        "pages_tried",
+        "pages",
+        "chat_messages",
+        "chat_to"
       ],
       "type": "object"
     },

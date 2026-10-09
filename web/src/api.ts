@@ -1,9 +1,10 @@
 // Cliente de la API local. Cada función fija la ruta junto con su tipo de respuesta, de modo que
 // el resto del frontend no puede emparejar un endpoint con un tipo equivocado.
 import type {
-  ActivateRunResult, ApiErrorBody, AuthorsResult, CategoryKey, CategoryMonthly, CategorySummary, Chat, ChatRow, Config,
-  ContextResult, DateOrder, DeleteChatResult, ImportCommitRequest, ImportCommitResult, ImportPreview, ImportRecord,
-  LabelsResult, OkResult, ProviderName, ResourceLibrary, RunListItem, RunStartResult, SearchResult, Stats,
+  ActivateRunResult, ApiErrorBody, AuthorsResult, CategoryKey, CategoryMonthly, CategorySummary, Chat, ChatRow,
+  Config, ContextResult, DateOrder, DeleteChatResult, ImportCommitRequest, ImportCommitResult, ImportPreview,
+  ImportRecord, LabelsResult, NewspaperEdition, NewspaperPreview, NewspaperRequest, NewspaperResult, OkResult,
+  ProviderName, ResourceLibrary, RunListItem, RunStartResult, SearchResult, Stats,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -116,3 +117,9 @@ export const reportUrl = (s: Scope, format: "html" | "txt", includeAuthors: bool
   "/api/report?" + qs({ chat_id: s.chat_id, from: s.from, to: s.to, format, include_authors: includeAuthors && "true", download: download && "true" });
 export const getReportText = async (s: Scope, includeAuthors: boolean): Promise<string> =>
   (await request(reportUrl(s, "txt", includeAuthors))).text();
+
+export const previewNewspaper = (chatId: number, from: string, to: string, order: "recent" | "shared", maxArticles: number): Promise<NewspaperPreview> =>
+  getJson("/api/newspaper/preview?" + qs({ chat_id: chatId, from, to, order, max_articles: maxArticles }));
+export const generateNewspaper = (req: NewspaperRequest): Promise<NewspaperResult> => sendJson("/api/newspaper/editions", req);
+export const getEditions = (chatId: number): Promise<NewspaperEdition[]> => getJson("/api/newspaper/editions?" + qs({ chat_id: chatId }));
+export const editionUrl = (id: number, download = false): string => `/periodico/${id}` + (download ? "?download=true" : "");

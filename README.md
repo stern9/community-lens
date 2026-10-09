@@ -4,8 +4,14 @@ POC local para explorar historiales de comunidades a partir de exportaciones TXT
 estadísticas reproducibles, búsqueda de texto completo, categorías revisables y evidencia
 (mensaje original, contexto y ubicación en el archivo) para cada resultado.
 
-El motor es determinista y funciona sin ningún LLM. La clasificación semántica es una capa
-opcional y nunca calcula los conteos oficiales.
+La app tiene dos modos, separados en la barra de navegación:
+
+- **Estadísticas y mensajes**: el motor determinista. Funciona sin ningún LLM y nada sale de la máquina.
+- **Periódico**: arma una página para ponerse al día con lo que se compartió en un rango de fechas.
+  Usa el modelo de lenguaje que configurés (Claude, GPT, Gemini u otro compatible) para redactar; los
+  enlaces, las fechas y las cifras siguen saliendo del chat importado.
+
+La clasificación semántica y el periódico son capas opcionales y nunca calculan los conteos oficiales.
 
 ## Arrancar
 
@@ -26,6 +32,57 @@ python3 -m venv .venv
 ```
 
 Configuración opcional: `cp .env.example .env` y editar. Sin `.env` todo funciona con los valores por defecto.
+
+## Generar el periódico
+
+1. Exportá el chat desde WhatsApp e importalo en **Importar chat**.
+2. Poné en `.env` la key del modelo que tengás (ver `.env.example`) y reiniciá la app:
+   - `ANTHROPIC_API_KEY` para Claude (modelo por defecto `claude-opus-5-5`), o
+   - `OPENAI_API_KEY` + `OPENAI_MODEL` para GPT o cualquier API compatible (`OPENAI_BASE_URL`), o
+   - `GEMINI_API_KEY` + `GEMINI_MODEL` para Gemini.
+   Se usa lo que tenga key. Con varias, "Automático" redacta con la primera de esa lista y, si ese modelo falla,
+   pasa a la siguiente (la edición guardada dice cuál redactó y cuál falló); también se puede fijar uno.
+3. En **Generar periódico** elegí el rango (última semana, dos semanas, mes o fechas a mano), revisá qué
+   enlaces entran y generá. La edición queda guardada y se puede abrir o descargar como un solo HTML.
+
+Cómo se arma una edición:
+
+| Parte | Quién la produce |
+|---|---|
+| Qué enlaces entran, fecha en que se compartieron, conteos de mensajes y participantes | Código, desde SQLite |
+| Tipo de enlace (artículo, red social, sitio) | Regla fija por dominio y ruta |
+| Titulares, resúmenes, cronología, "hilo de la edición" | El modelo, leyendo el texto de cada página |
+| Lectura de la conversación (opcional) | El modelo, sobre mensajes seudonimizados |
+| Mensajes por tema dentro de esa lectura | Código, contando la agrupación que hizo el modelo |
+
+- El modelo nunca escribe direcciones: se refiere a cada enlace por un número y el código pone la URL.
+  Un número que no existe se descarta, así que una edición solo enlaza a lo que se compartió en el chat.
+- Las páginas se descargan desde tu máquina y su texto limpio se guarda en la tabla `pages`; las ediciones,
+  en `editions`. Si un artículo no se puede leer (muro de pago, enlace caído), entra el siguiente del rango
+  y el que falló queda listado en "No se pudo leer".
+- De redes sociales solo se obtiene lo que cada plataforma publica para incrustar (texto del post, título
+  del video). Lo que no se pudo ver se muestra como "sin vista previa disponible", sin texto inventado.
+- La plantilla es fija (`community_lens/newspaper_html.py` y `newspaper.css`): sin scripts ni recursos externos.
+
+### Sin pantalla (para automatizar)
+
+```bash
+.venv/bin/python -m community_lens periodico --archivo export.zip --grupo "Mi comunidad" --dias 7 --salida sitio/
+```
+
+Importa la exportación (`.zip` o `.txt`; volver a pasar el mismo archivo no duplica nada), genera la edición de los
+últimos 7 días con mensajes y escribe en `sitio/` un `index.html` más una página por edición. Esa carpeta es solo
+HTML: se puede subir a cualquier hosting estático (por ejemplo, un repositorio aparte conectado a Vercel).
+`--desde/--hasta` fijan el rango y `--solo-publicar` reescribe el sitio sin generar. Sin `--modelo` redacta el primer
+proveedor configurado que responda; con `--modelo openai` (o `anthropic`, `gemini`) solo ese.
+
+Las lecturas de la conversación no salen por defecto. Para incluirlas hay que pedirlas y confirmarlo:
+`--lecturas todos --confirmo-enviar-chat` (o una lista: `anthropic,openai`). Antes de publicar en un sitio abierto, tené presente que
+esas lecturas resumen una conversación privada.
+
+El formato de periódico y la idea de que un modelo lea las páginas y arme la portada vienen de
+[ai-newtab](https://github.com/ThariqS/ai-newtab) de Thariq (`ThariqS`, licencia MIT). Aquí no se usa su código:
+la lectura se hace en Python y el diseño es una plantilla, para que cada edición salga con la misma forma.
 
 ## Pruebas
 
@@ -69,6 +126,9 @@ community_lens/
   resources.py   Biblioteca de documentos (agrupados por versión) y enlaces compartidos.
   classify/      Interfaz de proveedores: rules (local), jev (opcional), openai_decisions (reservado).
   report.py      Reporte agregado HTML / texto.
+  newspaper.py   Periódico: selección de enlaces, lectura de páginas, seudonimización, armado de la edición.
+  newspaper_html.py + newspaper.css   Plantilla fija del periódico (HTML autocontenido).
+  llm.py         Modelos de lenguaje sin atarse a un proveedor (Claude, OpenAI o compatible, Gemini).
   api.py         FastAPI + frontend estático.
 web/src/         Frontend en TypeScript estricto (tipos de la API, cliente, DOM, gráficos, vistas).
 web/dist/        JavaScript compilado desde web/src; versionado para correr sin Node.
@@ -285,7 +345,10 @@ medida, así que no debe leerse como probabilidad calibrada.
 ## Privacidad y seguridad
 
 - Escucha solo en `127.0.0.1`. No hay autenticación: no cambiés `CL_HOST` en una red compartida.
-- Ningún dato sale de la máquina salvo que actives Jev y confirmes cada ejecución.
+- En el modo estadísticas, ningún dato sale de la máquina salvo que actives Jev y confirmes cada ejecución.
+- Generar el periódico sí envía datos al proveedor del modelo que hayás configurado: siempre el texto público de las páginas enlazadas; el texto del chat solo si marcás una "lectura de la conversación" y confirmás la casilla. En ese caso los mensajes van con seudónimos (P01, P02…) y sin teléfonos, correos ni menciones; un nombre de pila escrito dentro de un mensaje sí puede ir. La pantalla muestra cuántos mensajes se enviarían antes de generar, y cada edición guarda qué se envió y a quién.
+- Al descargar páginas enlazadas se rechazan direcciones que no sean públicas, para que un enlace del chat no alcance la red local.
+- Las keys de los modelos se leen de `.env`, no se registran y nunca llegan al navegador.
 - `.gitignore` excluye `Chats/`, `data/`, bases SQLite, `reports/` y `.env`.
 - Los logs registran conteos y estados, nunca texto de mensajes ni secretos; el log de accesos HTTP está desactivado porque las URLs de búsqueda contienen términos del chat.
 - El contenido del chat se trata como dato: el frontend solo lo inserta como texto (sin `innerHTML`; el tipo `Child` de `dom.ts` no admite HTML) y la app envía una Content-Security-Policy sin scripts en línea; los únicos estilos en línea permitidos son dos bloques fijos de la librería de gráficos, autorizados por hash.
@@ -312,7 +375,9 @@ medida, así que no debe leerse como probabilidad calibrada.
 
 - Medir la exactitud de Jev en español contra etiquetas propias (la conexión ya está verificada).
 - Proveedor OpenAI Decisions.
-- Importar `.zip` de WhatsApp y el formato `chat.md` (hoy solo `.txt`).
+- Periódico: los proveedores OpenAI y Gemini están implementados pero no se probaron contra el servicio real (solo Claude). Generación en segundo plano con progreso. Editar o quitar una nota antes de compartir.
+- Importar una exportación "con archivos" sobre una "sin archivos" del mismo chat duplica los mensajes con adjunto (el texto del marcador cambia); por ahora conviene importarla como grupo aparte.
+- Importar el formato `chat.md` (hoy `.zip` y `.txt`).
 - Más patrones de avisos en español: los archivos reales disponibles estaban en inglés, así que los patrones en español solo se validaron con fixtures sintéticos.
 - Clasificación en segundo plano con progreso (hoy la solicitud espera a que termine).
 - Pruebas automatizadas de interacción en navegador (clics en formularios; hoy se verifica por tipos, contrato y capturas).
@@ -321,6 +386,7 @@ medida, así que no debe leerse como probabilidad calibrada.
 
 ## Limitaciones
 
+- **Periódico:** los resúmenes son automáticos y no se verifican contra los artículos. La regla que separa artículo, red social y sitio es simple (dominio y ruta) y puede clasificar mal un enlace. Las páginas que dependen de JavaScript o de sesión iniciada no se pueden leer.
 - **Recursos:** la "última versión" de un documento es el número de versión más alto que aparece en el nombre del archivo dentro de ese chat. No detecta una versión más nueva compartida en otro grupo, como enlace, o con otro nombre; tampoco lista los documentos cuyo nombre no quedó en la exportación. El archivo en sí nunca está en el TXT.
 - El TXT no trae IDs nativos, reacciones, respuestas citadas, adjuntos ni lista de miembros. No existen enlaces para abrir un mensaje en WhatsApp.
 - Las horas son las del teléfono que exportó. Si dos exportaciones del mismo chat vienen de zonas distintas, hay que declarar la zona correcta de cada una para que se reconcilien.

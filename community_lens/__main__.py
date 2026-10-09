@@ -1,4 +1,4 @@
-"""Arranque: python -m community_lens"""
+"""Arranque: python -m community_lens  (o `python -m community_lens periodico …` sin pantalla; ver cli.py)"""
 import logging
 
 import uvicorn
@@ -7,6 +7,10 @@ from .config import settings
 
 
 def main() -> None:
+    import sys
+    if sys.argv[1:2] == ["periodico"]:
+        from .cli import periodico
+        raise SystemExit(periodico(sys.argv[2:]))
     s = settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if s.host not in ("127.0.0.1", "localhost", "::1"):

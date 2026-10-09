@@ -12,7 +12,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import classify, importer, report, resources, search, stats
+from . import classify, importer, llm, newspaper, report, resources, search, stats
 from .classify.taxonomy import CATEGORY_KEYS, TAXONOMY_VERSION, public as taxonomy_public
 from .config import ROOT, settings
 from .db import connect
@@ -64,7 +64,7 @@ def _chat(con, chat_id: int):
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     resp = await call_next(request)
-    if not request.url.path.startswith(("/api/report", "/como-funciona")):
+    if not request.url.path.startswith(("/api/report", "/como-funciona", "/periodico/")):
         # Sin scripts ni estilos en línea, sin orígenes externos.
         resp.headers["Content-Security-Policy"] = (
             f"default-src 'self'; style-src 'self' {PLOT_STYLE_HASHES}; img-src 'self' data:; "
@@ -146,8 +146,8 @@ def chat_imports(chat_id: int, con=Depends(db)):
 @app.post("/api/imports/preview")
 async def import_preview(request: Request, filename: str = Query(..., max_length=300), timezone: str | None = None,
                          date_order: str | None = Query(None, pattern="^(MDY|DMY|YMD)$"), con=Depends(db)):
-    data = await request.body()
-    res = importer.preview(con, data, Path(filename).name, timezone, date_order)
+    data, name = importer.unzip_chat(await request.body(), Path(filename).name)
+    res = importer.preview(con, data, name, timezone, date_order)
     log.info("vista previa: %s bytes, estado de fecha=%s", len(data), res["date_detection"]["status"])
     return res
 
@@ -315,6 +315,68 @@ def get_report(chat_id: int, format: str = Query("html", pattern="^(html|txt)$")
     if format == "html":
         headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
     return Response(body, media_type="text/html; charset=utf-8" if format == "html" else "text/plain; charset=utf-8", headers=headers)
+
+
+# ---------------------------------------------------------------- periódico --
+
+@app.exception_handler(newspaper.NewspaperError)
+async def newspaper_error(_, exc: newspaper.NewspaperError):
+    return JSONResponse({"error": "newspaper", "detail": str(exc)}, status_code=422)
+
+
+@app.exception_handler(llm.LLMError)
+async def llm_error(_, exc: llm.LLMError):
+    return JSONResponse({"error": "llm", "detail": str(exc)}, status_code=502)
+
+
+def _range(date_from: str | None, date_to: str | None) -> tuple[str, str]:
+    a, b = _date(date_from), _date(date_to)
+    if not a or not b:
+        raise HTTPException(422, "El periódico necesita fecha de inicio y de fin.")
+    return a, b
+
+
+@app.get("/api/newspaper/preview")
+def newspaper_preview(chat_id: int, date_from: str = Query(..., alias="from"), date_to: str = Query(..., alias="to"),
+                      order: str = Query("recent", pattern="^(recent|shared)$"), max_articles: int = Query(8, ge=3, le=15),
+                      con=Depends(db)):
+    """Qué entraría en la edición y qué se enviaría a un modelo. No sale nada de la máquina."""
+    _chat(con, chat_id)
+    a, b = _range(date_from, date_to)
+    return newspaper.preview(con, chat_id, a, b, order, max_articles)
+
+
+@app.post("/api/newspaper/editions")
+def newspaper_generate(body: dict = Body(...), con=Depends(db)):
+    c = _chat(con, int(body.get("chat_id", 0)))
+    a, b = _range(body.get("from"), body.get("to"))
+    readers = [str(r) for r in body.get("readers") or []]
+    res = newspaper.generate(con, c["id"], c["name"], a, b, editor=str(body.get("editor", "")), readers=readers,
+                             consent_chat=body.get("consent_chat") is True,
+                             order="shared" if body.get("order") == "shared" else "recent",
+                             max_articles=max(3, min(int(body.get("max_articles") or 8), 15)))
+    log.info("periódico: edición %s, %s páginas a %s, %s mensajes a %s proveedor(es)", res["id"], res["sent"]["pages"],
+             res["sent"]["pages_to"], res["sent"]["chat_messages"], len(res["sent"]["chat_to"]))
+    return res
+
+
+@app.get("/api/newspaper/editions")
+def newspaper_editions(chat_id: int, con=Depends(db)):
+    _chat(con, chat_id)
+    return newspaper.editions(con, chat_id)
+
+
+@app.get("/periodico/{edition_id}")
+def newspaper_page(edition_id: int, download: bool = False, con=Depends(db)):
+    """La edición como página autocontenida: sin scripts, sin red, solo estilos en línea."""
+    found = newspaper.edition_html(con, edition_id)
+    if not found:
+        raise HTTPException(404, "Edición no encontrada.")
+    page, name = found
+    headers = {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"}
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="{name}.html"'
+    return Response(page, media_type="text/html; charset=utf-8", headers=headers)
 
 
 # ----------------------------------------------------------------- frontend --

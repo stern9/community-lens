@@ -16,13 +16,23 @@
     <button id="allTime" class="ghost" type="button">Todo el historial</button>
   </div>
   <nav id="tabs" class="tabs" aria-label="Secciones">
-    <a href="#/resumen" data-tab="resumen">Resumen</a>
-    <a href="#/explorar" data-tab="explorar">Explorar</a>
-    <a href="#/recursos" data-tab="recursos">Recursos</a>
-    <a href="#/categorias" data-tab="categorias">Categorías</a>
-    <a href="#/importar" data-tab="importar">Importar</a>
-    <a href="#/reporte" data-tab="reporte">Reporte</a>
-    <a href="/como-funciona" target="_blank" rel="noopener">Cómo funciona ↗</a>
+    <div class="mode" data-mode="stats">
+      <span class="mode-label">Estadísticas y mensajes</span>
+      <a href="#/resumen" data-tab="resumen">Resumen</a>
+      <a href="#/explorar" data-tab="explorar">Explorar</a>
+      <a href="#/recursos" data-tab="recursos">Recursos</a>
+      <a href="#/categorias" data-tab="categorias">Categorías</a>
+      <a href="#/reporte" data-tab="reporte">Reporte</a>
+    </div>
+    <div class="mode" data-mode="paper">
+      <span class="mode-label">Periódico</span>
+      <a href="#/periodico" data-tab="periodico">Generar periódico</a>
+    </div>
+    <div class="mode" data-mode="data">
+      <span class="mode-label">Datos</span>
+      <a href="#/importar" data-tab="importar">Importar chat</a>
+      <a href="/como-funciona" target="_blank" rel="noopener">Cómo funciona ↗</a>
+    </div>
   </nav>
 </header>
 <main id="view" tabindex="-1"></main>
