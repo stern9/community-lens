@@ -210,3 +210,11 @@ def test_typescript_compiles_and_committed_build_is_current(tmp_path):
                            cwd=ROOT, capture_output=True, text=True, check=False)
         assert r.returncode == 0, r.stdout + r.stderr
         assert json.loads(out.read_text()) == SCHEMA, "web/src/api-schema.json está desactualizado: corré `npm run schema`"
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requiere Node (solo para desarrollar el frontend)")
+def test_newspaper_view_completes_cleared_dates():
+    """La vista compilada pide otra vista previa al borrar una fecha y genera con el rango resuelto."""
+    r = subprocess.run(["node", "--experimental-vm-modules", "tests/frontend/periodico.mjs"], cwd=ROOT,
+                       capture_output=True, text=True, check=False)
+    assert r.returncode == 0, r.stdout + r.stderr

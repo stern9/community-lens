@@ -17,7 +17,6 @@ export const viewPeriodico: View = async () => {
   // Lo que falte del rango lo completa el backend con la misma regla que la línea de comandos: la vista previa
   // devuelve el rango resuelto y el último día con mensajes, y con eso se llenan los campos y los atajos.
   let lastDay = "";
-  let asked = false;
   const from = h("input", { type: "date", value: state.from, "aria-label": "Desde" });
   const to = h("input", { type: "date", value: state.to, "aria-label": "Hasta" });
   const maxSel = h("select", null, [5, 8, 12, 15].map((x) => h("option", { value: x, selected: x === 8 }, String(x))));
@@ -45,8 +44,7 @@ export const viewPeriodico: View = async () => {
 
   async function refresh(): Promise<void> {
     current = null; syncGo();
-    if (asked && (!from.value || !to.value || from.value > to.value)) { markPreset(); put(found, h("p", { class: "error" }, "Elegí un rango de fechas válido.")); return; }
-    asked = true;
+    if (from.value && to.value && from.value > to.value) { markPreset(); put(found, h("p", { class: "error" }, "Elegí un rango de fechas válido.")); return; }
     let p: NewspaperPreview;
     try { p = await api.previewNewspaper(chatId, from.value, to.value, order(), Number(maxSel.value)); }
     catch (e) { put(found, h("p", { class: "error" }, errMsg(e))); return; }

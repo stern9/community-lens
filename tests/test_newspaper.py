@@ -118,6 +118,56 @@ def test_preview_sends_nothing_and_matches_types(client, monkeypatch):
     assert "k-demo" not in str(p)
 
 
+@pytest.mark.parametrize("status", ["ok", "failed"])
+@pytest.mark.parametrize("canonical_exists", [False, True])
+def test_old_page_cache_is_normalized_on_open(con, status, canonical_exists):
+    """Abrir una base vieja deja una fila por identidad; reabrirla no vuelve a cambiar la caché."""
+    from community_lens.config import settings
+    from community_lens.db import connect
+    url = "https://www.example.org:443/notas/uno/?utm_source=demo"
+    key = "https://example.org/notas/uno"
+    stamp = "2026-10-01T00:00:00Z"
+    con.execute("INSERT INTO pages(url, kind, status, title, text, fetched_at) VALUES (?, 'article', ?, ?, ?, ?)",
+                (url, status, "Anterior", "Texto sintético anterior", stamp))
+    # Otra variante ya normalizada con la regla anterior, que todavía conservaba el puerto por defecto.
+    con.execute("INSERT INTO pages(url, kind, status, title, text, fetched_at) VALUES (?, 'article', ?, ?, ?, ?)",
+                ("https://example.org:443/notas/uno", status, "Anterior", "Texto sintético anterior", stamp))
+    if canonical_exists:
+        con.execute("INSERT INTO pages(url, kind, status, title, text, fetched_at) VALUES (?, 'article', 'ok', ?, ?, ?)",
+                    (key, "Normalizada", "Texto sintético normalizado", stamp))
+    expected_title = "Normalizada" if canonical_exists else "Anterior"
+    net = FakeNet(fake_site)
+    snapshot = None
+    for _ in range(2):
+        opened = connect(settings().db_path)
+        try:
+            rows = [dict(r) for r in opened.execute("SELECT * FROM pages")]
+            assert len(rows) == 1 and rows[0]["url"] == key and rows[0]["title"] == expected_title
+            assert rows[0]["fetched_at"] == stamp
+            assert snapshot is None or snapshot == rows
+            snapshot = rows
+        finally:
+            opened.close()
+    pages = newspaper.load_pages(con, [{"url": url, "kind": "article"}], net)
+    assert pages[url]["status"] == "ok" and pages[url]["url"] == url
+    assert len(net.requests) == (1 if status == "failed" and not canonical_exists else 0)
+    assert [r["url"] for r in con.execute("SELECT url FROM pages")] == [key]
+
+
+@pytest.mark.parametrize("missing", ["from", "to", "both"])
+def test_cleared_preview_dates_are_resolved_but_generation_requires_dates(client, missing):
+    c, cid = client
+    dates = {"from": "2026-10-01", "to": "2026-10-03"}
+    for field in dates:
+        if missing in (field, "both"):
+            dates[field] = ""
+    preview = c.get("/api/newspaper/preview", params={"chat_id": cid, **dates})
+    assert preview.status_code == 200
+    resolved = preview.json()
+    assert resolved["from"] and resolved["to"] and resolved["from"] <= resolved["to"]
+    assert c.post("/api/newspaper/editions", json={"chat_id": cid, **dates}).status_code == 422
+
+
 def test_transcript_is_pseudonymized(con):
     from conftest import do_import
     cid = do_import(con, None, data=CHAT, file_name="chat.txt", date_order="MDY")["chat_id"]

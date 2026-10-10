@@ -1,3 +1,4 @@
+import pytest
 from conftest import do_import
 
 from community_lens import resources
@@ -105,3 +106,22 @@ def test_links_grouped_by_url(con):
     assert l["domain"] == "example.org" and l["shares"] == 2            # dos mensajes, aunque uno repite la URL
     assert l["last_shared"].startswith("2026-06-24") and l["author"] == "Jota Demo" and l["sharers"] == ["Dana Demo", "Jota Demo"]
     assert resources.library(con, cid, kind="link", q="nada")["total"] == 0
+
+
+@pytest.mark.parametrize("scheme, port", [("http", 80), ("https", 443)])
+def test_default_ports_are_the_same_link(con, scheme, port):
+    plain = f"{scheme}://example.org/nota"
+    explicit = f"{scheme}://example.org:{port}/nota"
+    assert resources.link_key(explicit) == resources.link_key(plain)
+    assert resources.link_key(explicit.upper()) == resources.link_key(plain.upper())
+    assert resources.clean_url(explicit) == explicit  # la dirección compartida se conserva
+    data = (f"[6/1/26, 10:00:00] Dana Demo: {plain}\n"
+            f"[6/2/26, 10:00:00] Jota Demo: {explicit}\n").encode()
+    cid = do_import(con, None, data=data, file_name="puertos.txt", date_order="MDY")["chat_id"]
+    lib = resources.library(con, cid, kind="link")
+    assert lib["counts"]["links"] == 1 and lib["items"][0]["shares"] == 2
+
+
+@pytest.mark.parametrize("url", ["https://example.org:80/nota", "http://example.org:443/nota", "https://example.org:8443/nota"])
+def test_nondefault_ports_remain_distinct(url):
+    assert resources.link_key(url) == url

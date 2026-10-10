@@ -96,6 +96,12 @@ regenerados junto con el cambio. Para la línea de comandos, `.venv/bin/python -
 
 - Todo en español: comentarios, docstrings, mensajes de la interfaz y de error, documentación y tus respuestas.
   Los identificadores del código siguen en inglés, como el resto. La interfaz usa voseo.
+- Si un LLM aporta cambios, registrá su participación en los créditos del README: una sola línea por usuario de
+  GitHub, con su perfil enlazado y las herramientas y modelos usados. Consultá el usuario autenticado con
+  `gh api user --jq .login`; si no está disponible, pedíselo al dueño, no lo deduzcás del autor de un commit ni del
+  nombre del repositorio. Si esa persona ya tiene una línea, agregá ahí solo las herramientas o modelos nuevos,
+  sin duplicados. Podés usar una frase breve y simpática; no agregués fechas ni un historial por contribución.
+  No inventés el nombre del modelo si no se conoce. Esta regla autoriza ese cambio de créditos en el README.
 - Escribí código que se lea como el que lo rodea: SQL explícito sin ORM; cada módulo con su docstring de
   cabecera diciendo qué decide; frontend sin framework y con dependencias en un solo sentido
   (`app` → `router` → `views` → `components` → utilidades; una vista no importa a otra).

@@ -160,4 +160,4 @@ Los diagramas están hechos con [Archify](https://github.com/tt-a1i/archify) (li
 
 Este repositorio no tiene licencia de uso por ahora (no hay archivo `LICENSE`): todos los derechos reservados.
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+[@stern9](https://github.com/stern9): 🤖 Generated with [Claude Code](https://claude.com/claude-code) · ☀️ Y Sol contraataca, desde [Codex](https://openai.com/codex/).
