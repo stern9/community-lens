@@ -2,15 +2,18 @@
 import logging
 import sys
 
-import uvicorn
-
 from .config import settings
 
-USAGE = """uso: python -m community_lens [periodico …]
+USAGE = """Community Lens: analiza exportaciones de WhatsApp en tu máquina.
 
-  (sin argumentos)  levanta la app local (por defecto en http://127.0.0.1:8765; ver CL_HOST y CL_PORT en .env)
-  periodico …       genera y publica el periódico sin pantalla; ver `python -m community_lens periodico --help`
-  -h, --help        muestra esta ayuda
+Levantar la app (http://127.0.0.1:8765):
+  ./run.sh
+
+Generar el periódico sin abrir la app:
+  .venv/bin/python -m community_lens periodico --archivo export.zip --salida sitio/
+  .venv/bin/python -m community_lens periodico --help     todas las opciones
+
+Puerto, zona horaria y modelos se configuran en .env (ver .env.example).
 """
 
 
@@ -26,6 +29,12 @@ def main(argv: list[str] | None = None) -> None:
         # Cualquier otra cosa es un error de tipeo: no se arranca nada ni se toca el disco.
         print(f"Argumento desconocido: {argv[0]}\n\n{USAGE}", end="", file=sys.stderr)
         raise SystemExit(2)
+    try:
+        import uvicorn  # acá y no arriba: la ayuda tiene que funcionar aunque falten las dependencias
+    except ModuleNotFoundError:
+        print("Faltan las dependencias en este Python. Arrancá con ./run.sh (crea .venv e instala) "
+              "o usá .venv/bin/python -m community_lens.", file=sys.stderr)
+        raise SystemExit(1) from None
     s = settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if s.host not in ("127.0.0.1", "localhost", "::1"):

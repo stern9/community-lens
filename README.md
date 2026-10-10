@@ -33,7 +33,7 @@ python3 -m venv .venv
 ```
 
 La configuración es opcional: `cp .env.example .env` y editar. Ese archivo documenta todas las variables; sin `.env`
-todo funciona con los valores por defecto. `python -m community_lens --help` muestra los comandos disponibles.
+todo funciona con los valores por defecto. `.venv/bin/python -m community_lens --help` muestra los comandos disponibles.
 
 ## Primer recorrido
 
@@ -78,7 +78,7 @@ Sin pantalla, para automatizarlo:
 
 Importa la exportación, genera la edición de los 7 días que terminan en el último día con mensajes y escribe
 `sitio/index.html` más una página por edición en `sitio/ediciones/`. Es solo HTML: se sube a cualquier hosting
-estático. `python -m community_lens periodico --help` lista todas las opciones (rango, modelo, lecturas de la
+estático. `.venv/bin/python -m community_lens periodico --help` lista todas las opciones (rango, modelo, lecturas de la
 conversación, publicar sin generar). Más detalle en [docs/periodico.md](docs/periodico.md).
 
 ## Privacidad
