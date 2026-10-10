@@ -1,4 +1,4 @@
-# Un pull request al mes, cuando hay novedades. Las dependencias de Python se suman cuando tengan versiones fijadas.
+# Como mucho un pull request al mes por grupo, cuando hay novedades.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -9,3 +9,11 @@ updates:
     directory: /
     schedule:
       interval: monthly
+  # Python: actualiza requirements*.txt a partir de los .in (formato pip-compile), todo junto en un solo PR.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      python:
+        patterns: ["*"]
