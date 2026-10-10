@@ -8,18 +8,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from html import escape
 
-from . import search, stats
+from . import dates, search, stats
 from .classify.taxonomy import CATEGORIES
+from .dates import month_label
 
-WEEKDAYS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
-MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
-          "noviembre", "diciembre"]
-
-
-def month_label(ym: str) -> str:
-    """'2026-03' → 'mar-26'."""
-    return f"{MONTHS[int(ym[5:7]) - 1][:3]}-{ym[2:4]}"
-
+WEEKDAYS = [dates.WEEKDAYS[i - 1].capitalize() for i in range(7)]  # índice 0 = domingo, como en las estadísticas
 
 PROVIDER_LABEL = {"rules": "reglas locales (heurística, sin IA)", "jev": "Jev de TypeSafe"}
 

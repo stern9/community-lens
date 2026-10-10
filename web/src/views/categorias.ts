@@ -20,7 +20,7 @@ export const viewCategorias: View = async ({ refresh }) => {
   state.config = cfg;
   const taxo = cfg.taxonomy.categories;
   const jev = cfg.providers.find((p) => p.name === "jev");
-  put(view, summaryCard(cats, taxo, jev), cats.run ? trendCard(monthly, taxo) : null, reviewCard(cats), runCard(runs, jev, refresh));
+  put(view, summaryCard(cats, taxo, jev), cats.run ? trendCard(monthly, taxo) : null, reviewCard(cats), runCard(chatId, runs, jev, refresh));
 };
 
 /** Cuántos mensajes tiene cada categoría según la ejecución vigente, con las correcciones humanas aplicadas. */
@@ -81,12 +81,12 @@ function reviewCard(cats: CategorySummary): HTMLElement {
 }
 
 /** Lanzar una clasificación (reglas locales o Jev, con confirmación) y elegir cuál ejecución guardada rige. */
-function runCard(runs: readonly RunListItem[], jev: ProviderInfo | undefined, refresh: () => Promise<void>): HTMLElement {
+function runCard(chatId: number, runs: readonly RunListItem[], jev: ProviderInfo | undefined, refresh: () => Promise<void>): HTMLElement {
   const busy = h("span", { class: "muted" });
   const start = async (provider: ProviderName, consent: boolean): Promise<void> => {
     busy.textContent = "Clasificando…";
     try {
-      const r = await api.startRun(scope(), provider, consent);
+      const r = await api.startRun({ chat_id: chatId, from: state.from, to: state.to, provider, consent });
       if (!r.activated) alert(`Ejecución #${r.run_id} guardada: clasificó ${n(r.classified)} de ${n(r.eligible)} mensajes.\n\nComo cubre menos que la clasificación vigente (#${r.active_run_id}), NO la reemplazó. Podés verla o activarla en "Ejecuciones guardadas", más abajo.`);
       else toast(`Ejecución #${r.run_id}: ${n(r.classified)} mensajes clasificados` + (r.errors ? `, ${n(r.errors)} con error` : "") + (r.truncated ? ` (tope alcanzado; había ${n(r.eligible)})` : ""));
       await refresh();

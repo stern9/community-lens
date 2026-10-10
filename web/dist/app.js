@@ -12,7 +12,7 @@ import { byId, h, put } from "./dom.js";
 import { errMsg } from "./format.js";
 import { closeContext, render } from "./router.js";
 import { drawer, syncScope, view } from "./shell.js";
-import { loadChats, state } from "./state.js";
+import { loadChats, selectChat, setPeriod, state } from "./state.js";
 async function init() {
     const cfg = await api.getConfig();
     state.config = cfg;
@@ -22,7 +22,7 @@ async function init() {
         badge.classList.add("error");
     }
     try {
-        state.chatId = Number(localStorage.getItem("cl.chat")) || null;
+        selectChat(Number(localStorage.getItem("cl.chat")) || null);
     }
     catch { /* sin almacenamiento */ }
     await loadChats();
@@ -39,10 +39,11 @@ async function init() {
 /** Cambiar de grupo o de fechas actualiza el estado y vuelve a dibujar la pantalla actual. */
 function bindScopeBar() {
     const chatSel = byId("chat", HTMLSelectElement), from = byId("from", HTMLInputElement), to = byId("to", HTMLInputElement);
-    chatSel.addEventListener("change", () => { state.chatId = Number(chatSel.value) || null; state.authors = []; syncScope(); void render(); });
-    from.addEventListener("change", () => { state.from = from.value; void render(); });
-    to.addEventListener("change", () => { state.to = to.value; void render(); });
-    byId("allTime", HTMLButtonElement).addEventListener("click", () => { state.from = ""; state.to = ""; syncScope(); void render(); });
+    chatSel.addEventListener("change", () => { selectChat(Number(chatSel.value) || null); syncScope(); void render(); });
+    const period = () => { setPeriod(from.value, to.value); void render(); };
+    from.addEventListener("change", period);
+    to.addEventListener("change", period);
+    byId("allTime", HTMLButtonElement).addEventListener("click", () => { setPeriod("", ""); syncScope(); void render(); });
 }
 init().catch((e) => {
     put(view, h("section", { class: "card" }, h("p", { class: "error" }, "No se pudo iniciar la app: " + errMsg(e))));

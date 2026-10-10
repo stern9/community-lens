@@ -613,6 +613,22 @@
       ],
       "type": "object"
     },
+    "ChatUpdateRequest": {
+      "additionalProperties": false,
+      "description": "Cambios a un grupo: solo se envía lo que cambia.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "reinterpret_imports": {
+          "type": "boolean"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "Concentration": {
       "additionalProperties": false,
       "properties": {
@@ -1701,6 +1717,32 @@
       "description": "Mes \"AAAA-MM\".",
       "type": "string"
     },
+    "LabelsRequest": {
+      "additionalProperties": false,
+      "description": "`categories = null` vuelve a la clasificación automática.",
+      "properties": {
+        "categories": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/definitions/CategoryKey"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "categories"
+      ],
+      "type": "object"
+    },
     "LabelsResult": {
       "additionalProperties": false,
       "properties": {
@@ -1813,6 +1855,19 @@
     "LocalTimestamp": {
       "description": "Fecha local \"AAAA-MM-DD HH:MM:SS\".",
       "type": "string"
+    },
+    "MergeAuthorRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "into": {
+          "description": "Identificador del alias que queda como principal.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "into"
+      ],
+      "type": "object"
     },
     "Message": {
       "additionalProperties": false,
@@ -2163,7 +2218,19 @@
           "$ref": "#/definitions/NewspaperFacts"
         },
         "from": {
-          "$ref": "#/definitions/IsoDay"
+          "$ref": "#/definitions/IsoDay",
+          "description": "Rango ya resuelto: si la consulta no traía fechas, el rango por defecto."
+        },
+        "last_day": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDay"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Último día con mensajes de participantes: desde ahí cuentan \"última semana\" y los demás atajos."
         },
         "links": {
           "additionalProperties": false,
@@ -2253,6 +2320,7 @@
       "required": [
         "from",
         "to",
+        "last_day",
         "facts",
         "links",
         "links_total",
@@ -2794,6 +2862,51 @@
         "started_at",
         "status",
         "taxonomy_version"
+      ],
+      "type": "object"
+    },
+    "RunStartRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "chat_id": {
+          "type": "number"
+        },
+        "consent": {
+          "type": "boolean"
+        },
+        "from": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDay"
+            },
+            {
+              "const": "",
+              "type": "string"
+            }
+          ],
+          "description": "\"\" = sin límite."
+        },
+        "provider": {
+          "$ref": "#/definitions/ProviderName"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDay"
+            },
+            {
+              "const": "",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "chat_id",
+        "from",
+        "to",
+        "provider",
+        "consent"
       ],
       "type": "object"
     },

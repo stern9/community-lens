@@ -10,18 +10,20 @@ El modelo nunca escribe URLs: se refiere a cada enlace por un número y el códi
 """
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import re
 import socket
-import urllib.error
-import urllib.request
+import ssl
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from email.message import Message
 from html.parser import HTMLParser
-from urllib.parse import quote, urlsplit
+from pathlib import Path
+from urllib.parse import SplitResult, quote, urljoin, urlsplit
 
-from . import llm, resources
+from . import edition, llm, newspaper_html, resources
 
 SOCIAL = {"x.com": "X", "twitter.com": "X", "youtube.com": "YouTube", "youtu.be": "YouTube", "tiktok.com": "TikTok",
           "instagram.com": "Instagram", "linkedin.com": "LinkedIn", "lnkd.in": "LinkedIn", "facebook.com": "Facebook",
@@ -30,12 +32,12 @@ SOCIAL = {"x.com": "X", "twitter.com": "X", "youtube.com": "YouTube", "youtu.be"
 SKIP = {"chat.whatsapp.com", "wa.me", "api.whatsapp.com", "meet.google.com", "zoom.us", "teams.microsoft.com", "calendly.com",
         "forms.gle", "docs.google.com", "drive.google.com", "maps.app.goo.gl", "goo.gl", "bit.ly", "t.me"}
 LIMITS = {"article": (8, 15), "social": (6, 8), "tool": (4, 6)}  # (por defecto, máximo)
+MIN_ARTICLES = 3
+DEFAULT_DAYS = 7
 RESERVE = 4  # artículos extra que se leen por si alguno falla
 PAGE_CHARS = 12000
 PAGE_BYTES = 3_000_000
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
-MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"]
-WEEKDAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
 
 class NewspaperError(ValueError):
@@ -54,7 +56,7 @@ def link_kind(url: str, domain: str) -> str | None:
         return None
     if d in SOCIAL or any(d.endswith("." + s) for s in SOCIAL):
         return "social"
-    parts = urlsplit(url)
+    parts = urlsplit(resources.clean_url(url))  # los parámetros de seguimiento no cambian qué es
     if parts.scheme not in ("http", "https"):
         return None
     return "tool" if parts.path.strip("/") == "" and not parts.query else "article"
@@ -65,16 +67,64 @@ def platform(domain: str) -> str:
     return next((v for k, v in SOCIAL.items() if d == k or d.endswith("." + k)), d)
 
 
-def fmt_day(day: str, year: bool = False) -> str:
-    d = datetime.strptime(day[:10], "%Y-%m-%d")
-    return f"{d.day} de {MONTHS[d.month - 1]}" + (f" de {d.year}" if year else "")
+# ----------------------------------------------------- qué edición se pide --
+# Reglas que comparten la pantalla (api.py) y la línea de comandos (cli.py). Ninguna de las dos las repite:
+# pasan lo que recibieron y preview() y generate() lo resuelven acá.
+
+def find_chat(con, name: str | None = None, chat_id: int | None = None):
+    """El grupo con ese id o con ese nombre (fila de chats); None si el nombre no existe.
+    El nombre no es único: si lo llevan varios grupos no se elige ninguno."""
+    if chat_id is not None:
+        row = con.execute("SELECT id, name FROM chats WHERE id=?", (chat_id,)).fetchone()
+        if not row:
+            raise NewspaperError(f"No hay ningún grupo con id {chat_id}.")
+        return row
+    rows = con.execute("""SELECT c.id, c.name, COUNT(m.id) n, MIN(substr(m.ts_local,1,10)) a, MAX(substr(m.ts_local,1,10)) b
+                          FROM chats c LEFT JOIN messages m ON m.chat_id = c.id WHERE c.name = ? GROUP BY c.id ORDER BY c.id""",
+                       ((name or "").strip(),)).fetchall()
+    if len(rows) > 1:
+        listed = "; ".join(f"id {r['id']} ({r['n']} registros, {r['a'] or '—'} a {r['b'] or '—'})" for r in rows)
+        raise NewspaperError(f"Hay {len(rows)} grupos llamados «{rows[0]['name']}»: {listed}. Indicá cuál con su id.")
+    return rows[0] if rows else None
 
 
-def range_label(d_from: str, d_to: str) -> str:
-    a, b = datetime.strptime(d_from, "%Y-%m-%d"), datetime.strptime(d_to, "%Y-%m-%d")
-    if (a.year, a.month) == (b.year, b.month):
-        return f"{a.day} al {b.day} de {MONTHS[b.month - 1]}" if a.day != b.day else fmt_day(d_to)
-    return f"{fmt_day(d_from, a.year != b.year)} al {fmt_day(d_to, a.year != b.year)}"
+def valid_day(v: str) -> str:
+    try:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+            raise ValueError(v)
+        date.fromisoformat(v)
+    except (ValueError, TypeError):
+        raise NewspaperError(f"Fecha inválida: «{v}». Usá AAAA-MM-DD.") from None
+    return v
+
+
+def last_day(con, chat_id: int) -> str | None:
+    """Último día con mensajes de participantes. Los avisos del sistema posteriores no cuentan: no traen contenido."""
+    return con.execute("SELECT MAX(substr(ts_local,1,10)) d FROM messages WHERE chat_id=? AND record_type='message'",
+                       (chat_id,)).fetchone()["d"]
+
+
+def resolve_range(con, chat_id: int, d_from: str | None = None, d_to: str | None = None, days: int = DEFAULT_DAYS) -> tuple[str, str]:
+    """Rango de la edición, validado. Lo que falte se completa: termina el último día con mensajes y cubre
+    `days` días contando ese."""
+    if days < 1:
+        raise NewspaperError("La edición tiene que cubrir al menos un día.")
+    d_to = valid_day(d_to) if d_to else last_day(con, chat_id)
+    if not d_to:
+        raise NewspaperError("El grupo no tiene mensajes.")
+    d_from = valid_day(d_from) if d_from else (date.fromisoformat(d_to) - timedelta(days=days - 1)).isoformat()
+    if d_from > d_to:
+        raise NewspaperError("El rango de fechas está invertido.")
+    return d_from, d_to
+
+
+def article_limit(n: int | None) -> int:
+    """Máximo de artículos de una edición. Fuera de los límites no se corrige en silencio: se rechaza."""
+    if n is None:
+        return LIMITS["article"][0]
+    if not MIN_ARTICLES <= n <= LIMITS["article"][1]:
+        raise NewspaperError(f"El máximo de artículos va de {MIN_ARTICLES} a {LIMITS['article'][1]}.")
+    return n
 
 
 # ------------------------------------------------------------- candidatos --
@@ -83,12 +133,13 @@ def candidates(con, chat_id: int, d_from: str, d_to: str, order: str = "recent",
     """Enlaces del rango, ya clasificados y recortados. No sale nada de la máquina."""
     groups: dict[str, list[dict]] = {"article": [], "social": [], "tool": []}
     skipped = 0
+    # resources.links ya agrupó y contó por identidad del enlace; recién después se decide el tipo.
     for it in resources.links(con, chat_id, d_from, d_to):
         kind = link_kind(it["url"], it["domain"])
         if not kind:
             skipped += 1
             continue
-        groups[kind].append({"url": it["url"].split("?utm_")[0], "domain": _base(it["domain"]), "shared": it["last_shared"][:10],
+        groups[kind].append({"url": it["url"], "domain": _base(it["domain"]), "shared": it["last_shared"][:10],
                              "shares": it["shares"], "kind": kind, "_at": it["last_shared"]})
     out, total = {}, {}
     for kind, items in groups.items():
@@ -161,37 +212,103 @@ def extract(raw: str) -> tuple[str, str]:
     return title, (meta + "\n\n" + body).strip()[:PAGE_CHARS]
 
 
-def _public_host(url: str) -> bool:
-    """Solo http(s) hacia direcciones públicas: un enlace del chat no debe alcanzar la red local."""
+class _Unreachable(OSError):
+    """No se pudo conectar a esa IP (todavía no se envió nada): se puede probar la siguiente del mismo nombre."""
+
+
+class _Pinned(http.client.HTTPConnection):
+    """Conexión a una IP ya verificada. El nombre solo viaja en Host (y en SNI y el certificado si es https),
+    así que entre la comprobación y la conexión no hay una segunda resolución de DNS."""
+
+    def __init__(self, host: str, port: int, ip: str, tls: bool):
+        super().__init__(host, port, timeout=20)
+        self._ip, self._tls = ip, tls
+
+    def connect(self):
+        try:
+            self.sock = socket.create_connection((self._ip, self.port), self.timeout)
+        except OSError as err:
+            raise _Unreachable(str(err)) from None
+        if self._tls:
+            self.sock = ssl.create_default_context().wrap_socket(self.sock, server_hostname=self.host)
+
+
+class Net:
+    """Lo único que toca la red al leer un enlace: resolver un nombre y pedir una URL a una IP.
+    Las pruebas pasan uno falso."""
+
+    def resolve(self, host: str, port: int) -> list[str]:
+        try:
+            return list(dict.fromkeys(i[4][0] for i in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)))
+        except OSError:
+            return []
+
+    def get(self, parts: SplitResult, ip: str) -> tuple[int, Message, bytes]:
+        """Un GET que no sigue redirecciones: (estado, encabezados, hasta PAGE_BYTES del cuerpo)."""
+        tls = parts.scheme == "https"
+        host = parts.hostname or ""
+        conn = _Pinned(host, parts.port or (443 if tls else 80), ip, tls)
+        try:
+            safe = "/%:@!$&'()*+,;=~?"  # la URL viene del chat: lo que no sea ASCII se codifica, lo ya codificado se deja
+            path = quote(parts.path or "/", safe=safe) + ("?" + quote(parts.query, safe=safe) if parts.query else "")
+            conn.request("GET", path, headers={
+                "Host": (f"[{host}]" if ":" in host else host) + (f":{parts.port}" if parts.port else ""),
+                "User-Agent": UA, "Accept-Language": "es,en;q=0.8", "Connection": "close"})
+            resp = conn.getresponse()
+            return resp.status, resp.headers, resp.read(PAGE_BYTES)
+        finally:
+            conn.close()
+
+
+NET = Net()
+MAX_REDIRECTS = 5
+
+
+def _target(url: str, net: Net) -> tuple[SplitResult, list[str]] | None:
+    """(partes, IPs a las que se puede conectar) si la URL es http(s) y TODAS las direcciones de su nombre son públicas:
+    un enlace del chat no debe alcanzar la red local. None si no."""
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
-        return False
+        return None
+    ips = net.resolve(parts.hostname, parts.port or (443 if parts.scheme == "https" else 80))
     try:
-        infos = socket.getaddrinfo(parts.hostname, None)
-    except OSError:
-        return False
-    return all(ipaddress.ip_address(i[4][0]).is_global for i in infos)
+        public = bool(ips) and all(ipaddress.ip_address(ip.split("%")[0]).is_global for ip in ips)
+    except ValueError:
+        public = False
+    return (parts, ips) if public else None
 
 
-def http_get(url: str) -> tuple[str, str]:
-    """(url final, cuerpo). Lanza NewspaperError con un motivo corto."""
-    if not _public_host(url):
-        raise NewspaperError("dirección no permitida")
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "es,en;q=0.8"})
+def http_get(url: str, net: Net | None = None) -> tuple[str, str]:
+    """(url final, cuerpo). Lanza NewspaperError con un motivo corto.
+    Las redirecciones se siguen acá, una por una: cada salto se verifica ANTES de emitir su solicitud."""
+    net = net or NET
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            if not _public_host(resp.geturl()):
-                raise NewspaperError("redirección no permitida")
-            raw = resp.read(PAGE_BYTES)
-            charset = resp.headers.get_content_charset() or "utf-8"
-            return resp.geturl(), raw.decode(charset, errors="replace")
-    except urllib.error.HTTPError as err:
-        raise NewspaperError(f"HTTP {err.code}") from None
-    except (urllib.error.URLError, TimeoutError, OSError, LookupError):
+        for hop in range(MAX_REDIRECTS + 1):
+            target = _target(url, net)
+            if not target:
+                raise NewspaperError("redirección no permitida" if hop else "dirección no permitida")
+            parts, ips = target
+            for n, ip in enumerate(ips):  # p. ej. un nombre con IPv6 e IPv4 en una red sin ruta IPv6
+                try:
+                    status, headers, raw = net.get(parts, ip)
+                    break
+                except _Unreachable:
+                    if n == len(ips) - 1:
+                        raise
+            if status in (301, 302, 303, 307, 308) and headers.get("Location"):
+                url = urljoin(url, headers["Location"])
+                continue
+            if not 200 <= status < 300:
+                raise NewspaperError(f"HTTP {status}")
+            return url, raw[:PAGE_BYTES].decode(headers.get_content_charset() or "utf-8", errors="replace")
+        raise NewspaperError("demasiadas redirecciones")
+    except NewspaperError:
+        raise
+    except (OSError, http.client.HTTPException, LookupError, ValueError):
         raise NewspaperError("sin respuesta") from None
 
 
-def _social(url: str, get) -> tuple[str, str]:
+def _social(url: str, get) -> tuple[str, str]:  # get = http_get ya atado a una red
     """Ficha mínima con lo que la propia plataforma publica para incrustar. Sin sesión no hay más."""
     host = _base(urlsplit(url).hostname or "")
     plat = platform(host)
@@ -240,8 +357,9 @@ def _Text_meta(page: str, key: str) -> str:
     return p.meta.get(key, "")
 
 
-def read_page(item: dict, get=http_get) -> dict:
+def read_page(item: dict, net: Net | None = None) -> dict:
     """Descarga y limpia un enlace. No toca la base: se puede correr en paralelo."""
+    get = lambda url: http_get(url, net)
     try:
         if item["kind"] == "social":
             title, text = _social(item["url"], get)
@@ -256,22 +374,31 @@ def read_page(item: dict, get=http_get) -> dict:
         return {"url": item["url"], "kind": item["kind"], "status": "failed", "title": "", "text": "", "reason": "no se pudo leer"}
 
 
-def load_pages(con, items: list[dict], get=http_get, refresh: bool = False) -> dict[str, dict]:
-    """Lee los enlaces (en paralelo) y los guarda en SQLite; lo ya leído bien no se vuelve a descargar."""
+def load_pages(con, items: list[dict], net: Net | None = None, refresh: bool = False) -> dict[str, dict]:
+    """Lee los enlaces (en paralelo) y los guarda en SQLite; lo ya leído bien no se vuelve a descargar.
+    Devuelve {url del enlace: página}. En la tabla, cada página se guarda bajo la identidad del enlace
+    (resources.link_key), así el mismo enlace compartido con otra forma no se descarga dos veces."""
+    key = {i["url"]: resources.link_key(i["url"]) for i in items}
     have = {}
     if not refresh:
-        marks = ",".join("?" * len(items)) or "''"
-        have = {r["url"]: dict(r) for r in con.execute(
-            f"SELECT url, kind, status, title, text, reason FROM pages WHERE status='ok' AND url IN ({marks})", [i["url"] for i in items])}
+        # Las bases anteriores guardaban la página bajo la URL tal cual: se aceptan las dos formas.
+        names = list({*key, *key.values()})
+        marks = ",".join("?" * len(names)) or "''"
+        stored = {r["url"]: dict(r) for r in con.execute(
+            f"SELECT url, kind, status, title, text, reason FROM pages WHERE status='ok' AND url IN ({marks})", names)}
+        for url, k in key.items():
+            row = stored.get(k) or stored.get(url)
+            if row:
+                have[url] = {**row, "url": url}
     todo = [i for i in items if i["url"] not in have]
     with ThreadPoolExecutor(max_workers=6) as pool:
-        fresh = list(pool.map(lambda i: read_page(i, get), todo))
+        fresh = list(pool.map(lambda i: read_page(i, net), todo))
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     for p in fresh:
         con.execute("""INSERT INTO pages(url, kind, status, title, text, reason, fetched_at) VALUES (?,?,?,?,?,?,?)
                        ON CONFLICT(url) DO UPDATE SET kind=excluded.kind, status=excluded.status, title=excluded.title,
                          text=excluded.text, reason=excluded.reason, fetched_at=excluded.fetched_at""",
-                    (p["url"], p["kind"], p["status"], p["title"], p["text"], p["reason"], now))
+                    (key[p["url"]], p["kind"], p["status"], p["title"], p["text"], p["reason"], now))
         have[p["url"]] = p
     return have
 
@@ -383,7 +510,8 @@ def _s(v, limit: int = 600) -> str:
 
 
 def assemble(raw: dict, items: list[dict], pages: dict[str, dict]) -> dict:
-    """Valida lo que devolvió el modelo y lo une con los enlaces reales. Lo que no calza se descarta."""
+    """Valida lo que devolvió el modelo y lo une con los enlaces reales. Lo que no calza se descarta.
+    Devuelve un edition.Body, salvo que "lead" puede ser None si el modelo no dejó ningún artículo utilizable."""
     by_id = {it["id"]: it for it in items}
 
     def entries(key: str, kind: str):
@@ -427,9 +555,9 @@ def assemble(raw: dict, items: list[dict], pages: dict[str, dict]) -> dict:
             "socials": socials, "tools": tools, "timeline": timeline, "unread": unread}
 
 
-def reading(provider: llm.Provider, msgs: list[dict]) -> dict:
+def reading(provider: llm.Provider, msgs: list[dict], transport: llm.Transport | None = None) -> dict:
     """Lectura de un modelo sobre la conversación. Los conteos por tema los hace el código."""
-    raw = llm.complete_json(provider, READING_SYSTEM, "Mensajes del período:\n\n" + transcript_text(msgs))
+    raw = llm.complete_json(provider, READING_SYSTEM, "Mensajes del período:\n\n" + transcript_text(msgs), transport)
     paragraphs = [s for s in (_s(x, 1200) for x in (raw.get("parrafos") or [])[:2]) if s]
     if not paragraphs:
         raise llm.LLMError(f"{provider.label} no devolvió los párrafos esperados.")
@@ -449,11 +577,13 @@ def reading(provider: llm.Provider, msgs: list[dict]) -> dict:
 
 # ---------------------------------------------------------------- edición --
 
-def preview(con, chat_id: int, d_from: str, d_to: str, order: str = "recent", max_articles: int | None = None) -> dict:
+def preview(con, chat_id: int, d_from: str | None = None, d_to: str | None = None, order: str = "recent",
+            max_articles: int | None = None) -> dict:
     """Qué entraría en la edición y qué saldría de la máquina. Solo consulta la base."""
-    c = candidates(con, chat_id, d_from, d_to, order, max_articles)
+    d_from, d_to = resolve_range(con, chat_id, d_from, d_to)
+    c = candidates(con, chat_id, d_from, d_to, order, article_limit(max_articles))
     msgs = transcript(con, chat_id, d_from, d_to)
-    return {"from": d_from, "to": d_to, "facts": facts(con, chat_id, d_from, d_to), "links": c["items"], "links_total": c["total"],
+    return {"from": d_from, "to": d_to, "last_day": last_day(con, chat_id), "facts": facts(con, chat_id, d_from, d_to), "links": c["items"], "links_total": c["total"],
             "links_skipped": c["skipped"], "providers": [p.public() for p in llm.providers()], "missing_model": llm.missing_model(),
             "transcript": {"messages": len(msgs), "characters": sum(len(m["text"]) for m in msgs)}}
 
@@ -462,12 +592,12 @@ AUTO = "auto"  # redacta el primer proveedor configurado que responda
 ALL = "all"    # dan su lectura todos los proveedores configurados
 
 
-def generate(con, chat_id: int, chat_name: str, d_from: str, d_to: str, *, editor: str, readers: list[str], consent_chat: bool,
-             order: str = "recent", max_articles: int | None = None, get=None) -> dict:
-    from . import newspaper_html
-
-    if d_from > d_to:
-        raise NewspaperError("El rango de fechas está invertido.")
+def generate(con, chat_id: int, chat_name: str, d_from: str | None, d_to: str | None, *, editor: str, readers: list[str], consent_chat: bool,
+             order: str = "recent", max_articles: int | None = None, net: Net | None = None,
+             transport: llm.Transport | None = None) -> dict:
+    """Arma y guarda una edición. `net` y `transport` son quienes tocan la red (páginas y modelos); por defecto, los reales."""
+    d_from, d_to = resolve_range(con, chat_id, d_from, d_to)
+    cap = article_limit(max_articles)
     if readers and not consent_chat:
         raise NewspaperError("Las lecturas de la conversación envían texto del chat: hace falta confirmarlo explícitamente.")
     # "auto" y "all" usan lo que haya configurado en .env; un nombre concreto usa solo ese proveedor.
@@ -475,14 +605,13 @@ def generate(con, chat_id: int, chat_name: str, d_from: str, d_to: str, *, edito
     if not editors:
         raise llm.LLMError("No hay ningún modelo configurado en .env.")
     read_by = llm.providers() if ALL in readers else [llm.get(r) for r in dict.fromkeys(readers)]
-    cap = min(max_articles or LIMITS["article"][0], LIMITS["article"][1])
     c = candidates(con, chat_id, d_from, d_to, order, LIMITS["article"][1])
     if not c["items"]["article"]:
         raise NewspaperError("No hay artículos compartidos en ese rango.")
     # Se leen unos artículos de reserva: si uno falla (muro de pago, enlace caído), entra el siguiente del rango.
     pool = c["items"]["article"][:min(cap + RESERVE, LIMITS["article"][1])]
     others = c["items"]["social"] + c["items"]["tool"]
-    pages = load_pages(con, pool + others, get or http_get)
+    pages = load_pages(con, pool + others, net)
     chosen, ok = [], 0
     for it in pool:
         if ok == cap:
@@ -498,7 +627,7 @@ def generate(con, chat_id: int, chat_name: str, d_from: str, d_to: str, *, edito
     prompt, errors = editor_input(items, pages), []
     for n, ed in enumerate(editors, 1):
         try:
-            body = assemble(llm.complete_json(ed, EDITOR_SYSTEM, prompt), items, pages)
+            body = assemble(llm.complete_json(ed, EDITOR_SYSTEM, prompt, transport), items, pages)
             if not body["lead"]:
                 raise llm.LLMError(f"{ed.label} no devolvió ningún artículo utilizable.")
             break
@@ -510,60 +639,44 @@ def generate(con, chat_id: int, chat_name: str, d_from: str, d_to: str, *, edito
     readings = []
     for p in read_by:
         try:
-            readings.append(reading(p, msgs))
+            readings.append(reading(p, msgs, transport))
         except llm.LLMError as err:
             errors.append(f"{p.label}: {err}")
 
-    now = datetime.now().astimezone()
-    data = {"chat_name": chat_name, "from": d_from, "to": d_to, "range_label": range_label(d_from, d_to),
-            "created_label": f"{WEEKDAYS[now.weekday()].capitalize()} {fmt_day(now.strftime('%Y-%m-%d'), True)}",
-            "facts": facts(con, chat_id, d_from, d_to), "editor": ed.public(), "readings": readings, **body}
-    sent = {"pages_to": ed.label, "pages_tried": [x.label for x in editors[:n - 1]],  # los que recibieron el texto y fallaron
-            "pages": sum(1 for it in items if pages[it["url"]]["status"] == "ok"),
-            "chat_messages": len(msgs) if read_by else 0, "chat_to": [p.label for p in read_by]}
-    page = newspaper_html.render(data)
-    cur = con.execute("""INSERT INTO editions(chat_id, date_from, date_to, created_at, editor, sent, data, html)
-                         VALUES (?,?,?,?,?,?,?,?)""",
-                      (chat_id, d_from, d_to, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                       json.dumps(ed.public()), json.dumps(sent), json.dumps(data, ensure_ascii=False), page))
-    return {"id": cur.lastrowid, "sent": sent, "warnings": errors, "articles": 1 + len(body["articles"]),
+    data = edition.build(chat_name, d_from, d_to, facts(con, chat_id, d_from, d_to), ed.public(), readings, body)
+    sent: edition.Sent = {"pages_to": ed.label, "pages_tried": [x.label for x in editors[:n - 1]],  # los que recibieron el texto y fallaron
+                          "pages": sum(1 for it in items if pages[it["url"]]["status"] == "ok"),
+                          "chat_messages": len(msgs) if read_by else 0, "chat_to": [p.label for p in read_by]}
+    edition_id = edition.save(con, chat_id, data, sent)
+    return {"id": edition_id, "sent": sent, "warnings": errors, "articles": 1 + len(body["articles"]),
             "socials": len(body["socials"]), "tools": len(body["tools"]), "unread": len(body["unread"]), "readings": len(readings)}
 
 
 def editions(con, chat_id: int) -> list[dict]:
-    return [{"id": r["id"], "from": r["date_from"], "to": r["date_to"], "created_at": r["created_at"],
-             "editor": json.loads(r["editor"]), "sent": {"pages_tried": [], **json.loads(r["sent"])}}
-            for r in con.execute("SELECT id, date_from, date_to, created_at, editor, sent FROM editions WHERE chat_id=? ORDER BY id DESC",
-                                 (chat_id,))]
+    return edition.listing(con, chat_id)
 
 
 def edition_html(con, edition_id: int) -> tuple[str, str] | None:
-    """Se arma de nuevo desde los datos guardados, así una mejora de la plantilla llega también a ediciones viejas."""
-    from . import newspaper_html
-
-    r = con.execute("SELECT data, date_from, date_to FROM editions WHERE id=?", (edition_id,)).fetchone()
-    return (newspaper_html.render(json.loads(r["data"])), f"periodico_{r['date_from']}_a_{r['date_to']}") if r else None
+    """(página, nombre de archivo). Se arma de nuevo desde los datos guardados, así una mejora de la plantilla
+    llega también a ediciones viejas."""
+    try:
+        ed = edition.load(con, edition_id)
+    except ValueError as err:  # guardada por una versión más nueva de la app
+        raise NewspaperError(str(err)) from None
+    return (newspaper_html.render(ed), f"periodico_{ed['from']}_a_{ed['to']}") if ed else None
 
 
 def publish(con, chat_id: int, chat_name: str, out_dir) -> list[str]:
     """Escribe un sitio estático: una página por edición (la más reciente de cada rango) y un índice.
     Solo HTML; listo para subir a cualquier hosting estático."""
-    from pathlib import Path
-
-    from . import newspaper_html
-
     out = Path(out_dir)
     (out / "ediciones").mkdir(parents=True, exist_ok=True)
-    latest: dict[tuple[str, str], dict] = {}
-    for r in con.execute("SELECT id, date_from, date_to, data FROM editions WHERE chat_id=? ORDER BY id", (chat_id,)):
-        latest[(r["date_from"], r["date_to"])] = dict(r)
     entries, written = [], []
-    for (d_from, d_to), r in sorted(latest.items(), key=lambda kv: (kv[0][1], kv[0][0]), reverse=True):
-        data = json.loads(r["data"])
-        name = f"ediciones/{d_from}_a_{d_to}.html"
-        (out / name).write_text(newspaper_html.render(data), encoding="utf-8")
+    for ed in edition.latest_per_range(con, chat_id):
+        name = f"ediciones/{ed['from']}_a_{ed['to']}.html"
+        (out / name).write_text(newspaper_html.render(ed), encoding="utf-8")
         written.append(name)
-        entries.append({"href": name, "range_label": data["range_label"], "year": d_to[:4], "thread": data.get("thread"),
-                        "headline": data["lead"]["headline"], "articles": 1 + len(data["articles"])})
+        entries.append({"href": name, "range_label": ed["range_label"], "year": ed["to"][:4], "thread": ed["thread"],
+                        "headline": ed["lead"]["headline"], "articles": 1 + len(ed["articles"])})
     (out / "index.html").write_text(newspaper_html.render_index(chat_name, entries), encoding="utf-8")
     return ["index.html"] + written

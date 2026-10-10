@@ -5,7 +5,7 @@ import { ApiError } from "../api.js";
 import { h, kind, put, table } from "../dom.js";
 import { errMsg, n, utcMinute } from "../format.js";
 import { toast, syncScope, view } from "../shell.js";
-import { config, loadChats, state } from "../state.js";
+import { config, loadChats, selectChat, state } from "../state.js";
 const ISSUE_COLUMNS = [{ t: "Líneas" }, { t: "Motivo" }, { t: "Extracto" }];
 const issueRows = (issues) => issues.map((i) => [`${i.line_start}–${i.line_end}`, i.detail, i.excerpt.slice(0, 160)]);
 export const viewImportar = async () => {
@@ -105,8 +105,7 @@ function destinationForm(p, rec, order, file, onImported) {
                     throw e;
             }
             await loadChats();
-            state.chatId = r.chat_id;
-            state.authors = [];
+            selectChat(r.chat_id);
             syncScope();
             const text = r.status === "duplicate" ? r.message
                 : `Importado. ${n(r.reconciliation.added)} registros nuevos; ${n(r.reconciliation.matched_existing)} ya estaban (solo se anotó la nueva fuente); ${n(r.reconciliation.only_in_previous)} existen solo en importaciones previas y se conservaron; ${n(r.reconciliation.ambiguous_pairs)} quedaron marcados como solape ambiguo. `;
@@ -127,12 +126,12 @@ function destinationForm(p, rec, order, file, onImported) {
 function chatCard(c, imps, reload) {
     const tzIn = h("input", { value: c.timezone, list: "tzlist", size: 22 });
     const remove = async () => {
-        if (!confirm(`¿Eliminar «${c.name}» y todos sus datos derivados (mensajes, índice de búsqueda, clasificaciones y correcciones)?\n\nNo se puede deshacer. Tus archivos TXT originales no se tocan.`))
+        if (!confirm(`¿Eliminar «${c.name}» y todos sus datos derivados (mensajes, índice de búsqueda, clasificaciones, correcciones, ediciones del periódico y el texto de las páginas leídas para ellas)?\n\nNo se puede deshacer. Tus archivos TXT originales no se tocan.`))
             return;
         const r = await api.deleteChat(c.id);
         toast(`Eliminado: ${n(r.records_removed)} registros.`);
         if (state.chatId === c.id)
-            state.chatId = null;
+            selectChat(null);
         await loadChats();
         syncScope();
         await reload();

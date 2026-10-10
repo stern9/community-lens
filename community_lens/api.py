@@ -6,13 +6,16 @@ import logging
 from contextlib import asynccontextmanager
 import re
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field
 
 from . import classify, importer, llm, newspaper, report, resources, search, stats
+from .classify import labels
 from .classify.taxonomy import CATEGORY_KEYS, TAXONOMY_VERSION, public as taxonomy_public
 from .config import ROOT, settings
 from .db import connect
@@ -22,11 +25,12 @@ WEB = ROOT / "web"
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     importer.clear_staging()  # vistas previas abandonadas de sesiones anteriores
-    connect().close()         # crea el esquema si hace falta
+    con = connect()           # crea el esquema si hace falta
+    classify.close_stale_runs(con)
+    con.close()
     yield
 
 
@@ -52,6 +56,59 @@ def _date(v: str | None) -> str | None:
     if not _DATE.match(v):
         raise HTTPException(422, "Fecha inválida; usá AAAA-MM-DD.")
     return v
+
+
+# ------------------------------------------------------ cuerpos de solicitud --
+# La forma de cada cuerpo se valida al entrar (422 si no calza), antes de tocar la base. Es estricta: un
+# número es un número y un booleano es un booleano; nada se convierte a mano en las rutas.
+# Cada modelo tiene su tipo gemelo en web/src/types.ts; tests/test_contract.py comprueba que coincidan.
+
+class _Body(BaseModel):
+    model_config = ConfigDict(strict=True, populate_by_name=True)
+
+
+class ChatUpdateRequest(_Body):
+    name: str | None = None
+    timezone: str | None = None
+    reinterpret_imports: bool = True
+
+
+class ImportCommitRequest(_Body):
+    token: str = ""
+    file_name: str | None = None
+    chat_id: int | None = None
+    chat_name: str | None = None
+    timezone: str | None = None
+    date_order: str = ""
+    confirm_low_overlap: bool = False
+
+
+class MergeAuthorRequest(_Body):
+    into: int
+
+
+class LabelsRequest(_Body):
+    categories: list[str] | None = None
+    note: str | None = None
+
+
+class RunStartRequest(_Body):
+    chat_id: int
+    provider: str = "rules"
+    date_from: str | None = Field(None, alias="from")
+    date_to: str | None = Field(None, alias="to")
+    consent: bool = False
+
+
+class NewspaperRequest(_Body):
+    chat_id: int
+    date_from: str = Field(alias="from", min_length=1)  # generar envía texto afuera: el rango va siempre explícito
+    date_to: str = Field(alias="to", min_length=1)
+    editor: str = ""
+    readers: list[str] = []
+    consent_chat: bool = False
+    order: Literal["recent", "shared"] = "recent"
+    max_articles: int = 8
 
 
 def _chat(con, chat_id: int):
@@ -107,15 +164,20 @@ def chats(con=Depends(db)):
 
 
 @app.patch("/api/chats/{chat_id}")
-def update_chat(chat_id: int, body: dict = Body(...), con=Depends(db)):
+def update_chat(chat_id: int, body: ChatUpdateRequest, con=Depends(db)):
     _chat(con, chat_id)
-    if "name" in body:
-        name = str(body["name"]).strip()[:200]
+    # Primero se valida todo; recién después se escribe. La zona va antes que el nombre porque es la
+    # única de las dos escrituras que puede fallar (y lo hace dentro de su propia transacción).
+    name = None
+    if body.name is not None:
+        name = body.name.strip()[:200]
         if not name:
             raise HTTPException(422, "El nombre no puede quedar vacío.")
+    if body.timezone is not None:
+        importer.get_tz(body.timezone)
+        importer.retime_chat(con, chat_id, body.timezone, body.reinterpret_imports)
+    if name is not None:
         con.execute("UPDATE chats SET name=? WHERE id=?", (name, chat_id))
-    if "timezone" in body:
-        importer.retime_chat(con, chat_id, str(body["timezone"]), bool(body.get("reinterpret_imports", True)))
     return dict(_chat(con, chat_id))
 
 
@@ -153,12 +215,12 @@ async def import_preview(request: Request, filename: str = Query(..., max_length
 
 
 @app.post("/api/imports/commit")
-def import_commit(body: dict = Body(...), con=Depends(db)):
+def import_commit(body: ImportCommitRequest, con=Depends(db)):
     res = importer.commit(
-        con, str(body.get("token", "")), Path(str(body.get("file_name") or "chat.txt")).name,
-        chat_id=body.get("chat_id"), chat_name=body.get("chat_name"),
-        tz_name=str(body.get("timezone") or settings().default_tz), date_order=str(body.get("date_order", "")),
-        confirm_low_overlap=bool(body.get("confirm_low_overlap")))
+        con, body.token, Path(body.file_name or "chat.txt").name,
+        chat_id=body.chat_id, chat_name=body.chat_name,
+        tz_name=body.timezone or settings().default_tz, date_order=body.date_order,
+        confirm_low_overlap=body.confirm_low_overlap)
     log.info("importación: estado=%s chat=%s", res["status"], res["chat_id"])
     return res
 
@@ -178,9 +240,9 @@ def get_authors(chat_id: int, date_from: str | None = Query(None, alias="from"),
 
 
 @app.post("/api/authors/{author_id}/merge")
-def merge(author_id: int, body: dict = Body(...), con=Depends(db)):
+def merge(author_id: int, body: MergeAuthorRequest, con=Depends(db)):
     try:
-        stats.merge_author(con, author_id, int(body.get("into", 0)))
+        stats.merge_author(con, author_id, body.into)
     except ValueError as e:
         raise HTTPException(422, str(e))
     return {"ok": True}
@@ -229,18 +291,15 @@ def get_context(message_id: int, before: int = 6, after: int = 6, con=Depends(db
 
 
 @app.post("/api/messages/{message_id}/labels")
-def set_labels(message_id: int, body: dict = Body(...), con=Depends(db)):
+def set_labels(message_id: int, body: LabelsRequest, con=Depends(db)):
     """Agrega una corrección humana. La predicción original no se toca.
     categories = null revierte a la clasificación automática."""
-    if not con.execute("SELECT 1 FROM messages WHERE id=?", (message_id,)).fetchone():
+    try:
+        cats = labels.save_correction(con, message_id, body.categories, body.note)
+    except KeyError:
         raise HTTPException(404, "Mensaje no encontrado.")
-    cats = body.get("categories")
-    if cats is not None:
-        if not isinstance(cats, list) or any(c not in CATEGORY_KEYS for c in cats):
-            raise HTTPException(422, "Categorías inválidas.")
-        cats = [c for c in CATEGORY_KEYS if c in cats]
-    con.execute("INSERT INTO human_labels(message_id, categories, note, created_at) VALUES (?,?,?,?)",
-                (message_id, json.dumps(cats) if cats is not None else None, (str(body.get("note") or "")[:500] or None), importer.now_iso()))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
     return {"ok": True, "categories": cats}
 
 
@@ -248,7 +307,7 @@ def set_labels(message_id: int, body: dict = Body(...), con=Depends(db)):
 
 @app.get("/api/classify/runs")
 def runs(chat_id: int, con=Depends(db)):
-    active = search.latest_run(con, chat_id)
+    active = labels.active_run(con, chat_id)
     return [{**dict(r), "config": json.loads(r["config"]), "active": r["id"] == active} for r in
             con.execute("SELECT * FROM analysis_runs WHERE chat_id=? ORDER BY id DESC", (chat_id,))]
 
@@ -260,19 +319,18 @@ def activate_run(run_id: int, con=Depends(db)):
     if not r:
         raise HTTPException(404, "Ejecución no encontrada.")
     try:
-        search.set_active_run(con, r["chat_id"], run_id)
+        labels.set_active_run(con, r["chat_id"], run_id)
     except KeyError:
         raise HTTPException(422, "Solo se puede activar una ejecución completada.")
     return {"ok": True, "active_run_id": run_id}
 
 
 @app.post("/api/classify/runs")
-def start_run(body: dict = Body(...), con=Depends(db)):
-    chat_id = int(body.get("chat_id", 0))
-    _chat(con, chat_id)
+def start_run(body: RunStartRequest, con=Depends(db)):
+    _chat(con, body.chat_id)
+    d_from, d_to = _date(body.date_from), _date(body.date_to)
     try:
-        res = classify.run(con, chat_id, str(body.get("provider", "rules")), _date(body.get("from")), _date(body.get("to")),
-                           consent=body.get("consent") is True)
+        res = classify.run(con, body.chat_id, body.provider, d_from, d_to, consent=body.consent)
     except classify.ProviderError as e:
         raise HTTPException(400, str(e))
     log.info("clasificación: proveedor=%s mensajes=%s errores=%s", res["provider"], res["classified"], res["errors"])
@@ -290,13 +348,7 @@ def class_summary(chat_id: int, date_from: str | None = Query(None, alias="from"
 def class_monthly(chat_id: int, date_from: str | None = Query(None, alias="from"), date_to: str | None = Query(None, alias="to"),
                   run_id: int | None = None, con=Depends(db)):
     _chat(con, chat_id)
-    res = search.category_monthly(con, chat_id, _date(date_from), _date(date_to), run_id)
-    # Marca de mes parcial con el mismo criterio que las estadísticas oficiales.
-    partial = {m["month"]: m for m in stats.compute(con, chat_id, _date(date_from), _date(date_to))["monthly"]}
-    for m in res["months"]:
-        info = partial.get(m["month"])
-        m["partial"] = bool(info and info["partial"])
-    return res
+    return search.category_monthly(con, chat_id, _date(date_from), _date(date_to), run_id)
 
 
 # ------------------------------------------------------------------ reporte --
@@ -329,32 +381,20 @@ async def llm_error(_, exc: llm.LLMError):
     return JSONResponse({"error": "llm", "detail": str(exc)}, status_code=502)
 
 
-def _range(date_from: str | None, date_to: str | None) -> tuple[str, str]:
-    a, b = _date(date_from), _date(date_to)
-    if not a or not b:
-        raise HTTPException(422, "El periódico necesita fecha de inicio y de fin.")
-    return a, b
-
-
 @app.get("/api/newspaper/preview")
-def newspaper_preview(chat_id: int, date_from: str = Query(..., alias="from"), date_to: str = Query(..., alias="to"),
-                      order: str = Query("recent", pattern="^(recent|shared)$"), max_articles: int = Query(8, ge=3, le=15),
-                      con=Depends(db)):
-    """Qué entraría en la edición y qué se enviaría a un modelo. No sale nada de la máquina."""
+def newspaper_preview(chat_id: int, date_from: str | None = Query(None, alias="from"), date_to: str | None = Query(None, alias="to"),
+                      order: str = Query("recent", pattern="^(recent|shared)$"), max_articles: int = 8, con=Depends(db)):
+    """Qué entraría en la edición y qué se enviaría a un modelo. No sale nada de la máquina.
+    Sin fechas, el rango por defecto. El rango y el máximo de artículos los valida newspaper (422 si no sirven)."""
     _chat(con, chat_id)
-    a, b = _range(date_from, date_to)
-    return newspaper.preview(con, chat_id, a, b, order, max_articles)
+    return newspaper.preview(con, chat_id, date_from, date_to, order, max_articles)
 
 
 @app.post("/api/newspaper/editions")
-def newspaper_generate(body: dict = Body(...), con=Depends(db)):
-    c = _chat(con, int(body.get("chat_id", 0)))
-    a, b = _range(body.get("from"), body.get("to"))
-    readers = [str(r) for r in body.get("readers") or []]
-    res = newspaper.generate(con, c["id"], c["name"], a, b, editor=str(body.get("editor", "")), readers=readers,
-                             consent_chat=body.get("consent_chat") is True,
-                             order="shared" if body.get("order") == "shared" else "recent",
-                             max_articles=max(3, min(int(body.get("max_articles") or 8), 15)))
+def newspaper_generate(body: NewspaperRequest, con=Depends(db)):
+    c = _chat(con, body.chat_id)
+    res = newspaper.generate(con, c["id"], c["name"], body.date_from, body.date_to, editor=body.editor, readers=body.readers,
+                             consent_chat=body.consent_chat, order=body.order, max_articles=body.max_articles)
     log.info("periódico: edición %s, %s páginas a %s, %s mensajes a %s proveedor(es)", res["id"], res["sent"]["pages"],
              res["sent"]["pages_to"], res["sent"]["chat_messages"], len(res["sent"]["chat_to"]))
     return res
@@ -393,7 +433,7 @@ def how_it_works(name: str = ""):
         raise HTTPException(404, "Ese diagrama no existe.")
     f = ROOT / "docs" / "diagramas" / DIAGRAMS[name]
     if not f.exists():
-        raise HTTPException(404, "Diagrama no generado; ver README.")
+        raise HTTPException(404, "Diagrama no generado; ver docs/diagramas/README.md.")
     return FileResponse(f, media_type="text/html; charset=utf-8", headers={"Content-Security-Policy": (
         "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; "
         "font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'")})

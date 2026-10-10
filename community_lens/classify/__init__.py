@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone
 
 from ..config import settings
+from . import labels
 from .base import ContextMessage, Item, Provider, ProviderError, Result  # noqa: F401
 from .jev import JevProvider
 from .openai_decisions import OpenAIDecisionsProvider
@@ -21,6 +22,12 @@ CONTEXT_WINDOW_MINUTES = 15
 
 def providers_info() -> list[dict]:
     return [cls().info() for cls in PROVIDERS.values()]
+
+
+def close_stale_runs(con) -> int:
+    """Al arrancar: una ejecución que sigue "en curso" es de un proceso que ya no existe (se cerró a mitad de camino)."""
+    return con.execute("UPDATE analysis_runs SET status='failed', finished_at=?, error=? WHERE status='running'",
+                       (_now(), "La app se cerró antes de que la ejecución terminara.")).rowcount
 
 
 def _now() -> str:
@@ -75,31 +82,26 @@ def run(con, chat_id: int, provider_name: str, d_from: str | None = None, d_to: 
          d_from, d_to, _now())).lastrowid
     try:
         results, errors = provider.classify(items)
-    except ProviderError as e:
-        con.execute("UPDATE analysis_runs SET status='failed', finished_at=?, error=? WHERE id=?", (_now(), str(e), run_id))
+        con.execute("BEGIN IMMEDIATE")
+        for r in results:
+            ev = json.dumps(r.evidence, ensure_ascii=False) if r.evidence else None
+            cats = CATEGORY_KEYS if r.scores is not None else r.assigned
+            for c in cats:
+                con.execute("INSERT INTO classifications(run_id, message_id, category, assigned, score, evidence) VALUES (?,?,?,?,?,?)",
+                            (run_id, r.message_id, c, int(c in r.assigned), (r.scores or {}).get(c), ev))
+        status = "completed" if not errors else "partial"
+        con.execute("UPDATE analysis_runs SET status=?, finished_at=?, n_messages=?, n_errors=?, model=?, error=? WHERE id=?",
+                    (status, _now(), len(results), errors, provider.model(), getattr(provider, "last_error", None), run_id))
+        con.execute("COMMIT")
+    except Exception as e:
+        # Pase lo que pase, la ejecución no queda "en curso": se deshace lo que hubiera a medias y se marca fallida.
+        if con.in_transaction:
+            con.execute("ROLLBACK")
+        error = str(e) if isinstance(e, ProviderError) else f"Error inesperado ({type(e).__name__}): {e}"[:300]
+        con.execute("UPDATE analysis_runs SET status='failed', finished_at=?, error=? WHERE id=?", (_now(), error, run_id))
         raise
-    con.execute("BEGIN IMMEDIATE")
-    for r in results:
-        ev = json.dumps(r.evidence, ensure_ascii=False) if r.evidence else None
-        cats = CATEGORY_KEYS if r.scores is not None else r.assigned
-        for c in cats:
-            con.execute("INSERT INTO classifications(run_id, message_id, category, assigned, score, evidence) VALUES (?,?,?,?,?,?)",
-                        (run_id, r.message_id, c, int(c in r.assigned), (r.scores or {}).get(c), ev))
-    status = "completed" if not errors else "partial"
-    con.execute("UPDATE analysis_runs SET status=?, finished_at=?, n_messages=?, n_errors=?, model=?, error=? WHERE id=?",
-                (status, _now(), len(results), errors, provider.model(), getattr(provider, "last_error", None), run_id))
-    con.execute("COMMIT")
-    # Una ejecución nueva pasa a ser la vigente solo si cubre al menos tantos mensajes como la
-    # vigente actual. Así una corrida parcial (tope de Jev, período acotado) no tapa una completa.
-    cur = con.execute(
-        """SELECT r.id, r.n_messages FROM chats c JOIN analysis_runs r ON r.id = c.active_run_id
-           WHERE c.id = ? AND r.status IN ('completed','partial')""", (chat_id,)).fetchone()
-    if cur is None:
-        cur = con.execute("""SELECT id, n_messages FROM analysis_runs WHERE chat_id=? AND id<>? AND status IN
-                             ('completed','partial') ORDER BY id DESC LIMIT 1""", (chat_id, run_id)).fetchone()
-    activated = cur is None or len(results) >= cur["n_messages"]
-    con.execute("UPDATE chats SET active_run_id=? WHERE id=?", (run_id if activated else cur["id"], chat_id))
+    activated, active = labels.activate_if_fuller(con, chat_id, run_id, len(results))
     return {"run_id": run_id, "status": status, "provider": provider.name, "model": provider.model(),
             "classified": len(results), "errors": errors, "eligible": eligible,
             "truncated": limit is not None and eligible > len(items),
-            "activated": activated, "active_run_id": run_id if activated else cur["id"]}
+            "activated": activated, "active_run_id": active}

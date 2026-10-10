@@ -67,6 +67,21 @@ def _month_bounds(ym: str) -> tuple[str, str]:
     return f"{ym}-01", f"{ym}-{calendar.monthrange(y, m)[1]:02d}"
 
 
+def month_window(con, chat_id: int, d_from: str | None, d_to: str | None):
+    """Devuelve una función mes -> (¿parcial?, primer día cubierto, último día cubierto). Un mes es parcial si
+    el historial importado o el período elegido no lo cubren del primer al último día."""
+    cov = coverage(con, chat_id)
+    cov_a, cov_b = (cov["first_record"] or "")[:10], (cov["last_record"] or "")[:10]
+    lo = max(x for x in (cov_a, d_from or "") if x) if cov_a else None
+    hi = min(x for x in (cov_b, d_to or "9999") if x) if cov_b else None
+
+    def of(month: str) -> tuple[bool, str, str]:
+        m0, m1 = _month_bounds(month)
+        c0, c1 = max(m0, lo), min(m1, hi)
+        return c0 > m0 or c1 < m1, c0, c1
+    return of
+
+
 def compute(con, chat_id: int, d_from: str | None = None, d_to: str | None = None) -> dict:
     chat = con.execute("SELECT id, name, timezone FROM chats WHERE id=?", (chat_id,)).fetchone()
     if not chat:
@@ -131,18 +146,14 @@ def compute(con, chat_id: int, d_from: str | None = None, d_to: str | None = Non
             FROM messages m LEFT JOIN authors a ON a.id = m.author_id WHERE {wm} GROUP BY day ORDER BY day""", p)]
 
     monthly = []
-    cov_a, cov_b = (cov["first_record"] or "")[:10], (cov["last_record"] or "")[:10]
-    lo = max(x for x in (cov_a, d_from or "") if x) if cov_a else None
-    hi = min(x for x in (cov_b, d_to or "9999") if x) if cov_b else None
+    window = month_window(con, chat_id, d_from, d_to)
     for r in con.execute(
         f"""SELECT substr(m.ts_local,1,7) month, COUNT(*) messages, COUNT(DISTINCT {AUTHOR_KEY}) authors,
                    COUNT(DISTINCT substr(m.ts_local,1,10)) active_days
             FROM messages m LEFT JOIN authors a ON a.id = m.author_id WHERE {wm} GROUP BY month ORDER BY month""", p):
-        m0, m1 = _month_bounds(r["month"])
-        c0, c1 = max(m0, lo), min(m1, hi)
-        partial = c0 > m0 or c1 < m1
+        partial, c0, c1 = window(r["month"])
         monthly.append({**dict(r), "partial": partial, "covered_from": c0, "covered_to": c1,
-                        "days_in_month": int(m1[8:]),
+                        "days_in_month": int(_month_bounds(r["month"])[1][8:]),
                         "days_covered": (date.fromisoformat(c1) - date.fromisoformat(c0)).days + 1})
 
     wh = [dict(r) for r in con.execute(

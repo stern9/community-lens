@@ -2,9 +2,10 @@
 // el resto del frontend no puede emparejar un endpoint con un tipo equivocado.
 import type {
   ActivateRunResult, ApiErrorBody, AuthorsResult, CategoryKey, CategoryMonthly, CategorySummary, Chat, ChatRow,
-  Config, ContextResult, DateOrder, DeleteChatResult, ImportCommitRequest, ImportCommitResult, ImportPreview,
-  ImportRecord, LabelsResult, NewspaperEdition, NewspaperPreview, NewspaperRequest, NewspaperResult, OkResult,
-  ProviderName, ResourceLibrary, RunListItem, RunStartResult, SearchResult, Stats,
+  ChatUpdateRequest, Config, ContextResult, DateOrder, DeleteChatResult, ImportCommitRequest, ImportCommitResult,
+  ImportPreview, ImportRecord, LabelsRequest, LabelsResult, MergeAuthorRequest, NewspaperEdition, NewspaperPreview,
+  NewspaperRequest, NewspaperResult, OkResult, ResourceLibrary, RunListItem, RunStartRequest, RunStartResult,
+  SearchResult, Stats,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -82,7 +83,7 @@ export interface SearchParams {
 export const getConfig = (): Promise<Config> => getJson("/api/config");
 export const getChats = (): Promise<Chat[]> => getJson("/api/chats");
 export const updateChatTimezone = (chatId: number, timezone: string): Promise<ChatRow> =>
-  sendJson(`/api/chats/${chatId}`, { timezone, reinterpret_imports: true }, "PATCH");
+  sendJson(`/api/chats/${chatId}`, { timezone, reinterpret_imports: true } satisfies ChatUpdateRequest, "PATCH");
 export const deleteChat = async (chatId: number): Promise<DeleteChatResult> =>
   (await request(`/api/chats/${chatId}`, { method: "DELETE" })).json() as Promise<DeleteChatResult>;
 export const getChatImports = (chatId: number): Promise<ImportRecord[]> => getJson(`/api/chats/${chatId}/imports`);
@@ -94,7 +95,8 @@ export const commitImport = (req: ImportCommitRequest): Promise<ImportCommitResu
 
 export const getStats = (s: Scope): Promise<Stats> => getJson("/api/stats?" + scopeQs(s));
 export const getAuthors = (s: Scope): Promise<AuthorsResult> => getJson("/api/authors?" + scopeQs(s));
-export const mergeAuthor = (authorId: number, into: number): Promise<OkResult> => sendJson(`/api/authors/${authorId}/merge`, { into });
+export const mergeAuthor = (authorId: number, into: number): Promise<OkResult> => 
+  sendJson(`/api/authors/${authorId}/merge`, { into } satisfies MergeAuthorRequest);
 export const unmergeAuthor = (authorId: number): Promise<OkResult> => sendJson(`/api/authors/${authorId}/unmerge`, {});
 
 export const search = (p: SearchParams): Promise<SearchResult> => getJson("/api/search?" + qs({ ...p }));
@@ -104,13 +106,12 @@ export const getContext = (messageId: number, before: number, after: number): Pr
   getJson(`/api/messages/${messageId}/context?` + qs({ before, after }));
 /** `categories = null` vuelve a la clasificación automática. La predicción original nunca se modifica. */
 export const setLabels = (messageId: number, categories: CategoryKey[] | null): Promise<LabelsResult> =>
-  sendJson(`/api/messages/${messageId}/labels`, { categories });
+  sendJson(`/api/messages/${messageId}/labels`, { categories } satisfies LabelsRequest);
 
 export const getCategorySummary = (s: Scope): Promise<CategorySummary> => getJson("/api/classify/summary?" + scopeQs(s));
 export const getCategoryMonthly = (s: Scope): Promise<CategoryMonthly> => getJson("/api/classify/monthly?" + scopeQs(s));
 export const getRuns = (chatId: number): Promise<RunListItem[]> => getJson("/api/classify/runs?" + qs({ chat_id: chatId }));
-export const startRun = (s: Scope, provider: ProviderName, consent: boolean): Promise<RunStartResult> =>
-  sendJson("/api/classify/runs", { chat_id: s.chat_id, from: s.from, to: s.to, provider, consent });
+export const startRun = (req: RunStartRequest): Promise<RunStartResult> => sendJson("/api/classify/runs", req);
 export const activateRun = (runId: number): Promise<ActivateRunResult> => sendJson(`/api/classify/runs/${runId}/activate`, {});
 
 export const reportUrl = (s: Scope, format: "html" | "txt", includeAuthors: boolean, download = false): string =>
@@ -118,6 +119,7 @@ export const reportUrl = (s: Scope, format: "html" | "txt", includeAuthors: bool
 export const getReportText = async (s: Scope, includeAuthors: boolean): Promise<string> =>
   (await request(reportUrl(s, "txt", includeAuthors))).text();
 
+/** `from` o `to` vacíos: el backend completa el rango por defecto (termina el último día con mensajes). */
 export const previewNewspaper = (chatId: number, from: string, to: string, order: "recent" | "shared", maxArticles: number): Promise<NewspaperPreview> =>
   getJson("/api/newspaper/preview?" + qs({ chat_id: chatId, from, to, order, max_articles: maxArticles }));
 export const generateNewspaper = (req: NewspaperRequest): Promise<NewspaperResult> => sendJson("/api/newspaper/editions", req);

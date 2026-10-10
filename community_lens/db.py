@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS messages (
     link_count      INTEGER NOT NULL DEFAULT 0,
     needs_review    INTEGER NOT NULL DEFAULT 0,
     review_reason   TEXT,
-    match_key       TEXT NOT NULL,       -- clave de reconciliación (hash)
+    match_key       TEXT NOT NULL,       -- clave de reconciliación (hash) con que entró; al importar se recalcula
     first_import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS ix_messages_chat_seq ON messages(chat_id, seq);
@@ -160,7 +160,9 @@ CREATE TABLE IF NOT EXISTS pages (
     fetched_at  TEXT NOT NULL
 );
 
--- Ediciones del periódico. data = contenido estructurado; html = página autocontenida lista para compartir.
+-- Ediciones del periódico. data = contenido estructurado (su forma está en edition.py); la página se dibuja
+-- desde data cada vez que se abre o se publica. html quedó de una versión anterior: no se lee y las ediciones
+-- nuevas la dejan vacía (no se elimina para no tocar bases existentes).
 CREATE TABLE IF NOT EXISTS editions (
     id          INTEGER PRIMARY KEY,
     chat_id     INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,

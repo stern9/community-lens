@@ -7,13 +7,12 @@ import { h, hbars, kind, put, table } from "../dom.js";
 import { DAY_ORDER, dec, monthLabel, n, pad2, pct, weekdayName } from "../format.js";
 import { PROVIDER, SUBTYPE } from "../labels.js";
 import { emptyState, toast, view, type View } from "../shell.js";
-import { categories, scope, state } from "../state.js";
+import { categories, mergeAuthor, scope, state, unmergeAuthor } from "../state.js";
 import type { AuthorRow, AuthorsResult, CategorySummary, Stats } from "../types.js";
 
 export const viewResumen: View = async ({ params, refresh }) => {
   if (state.chatId == null) return emptyState();
   const [s, au, cats] = await Promise.all([api.getStats(scope()), api.getAuthors(scope()), api.getCategorySummary(scope())]);
-  state.authors = au.authors;
   put(view,
     factsCard(s),
     activityCard(s, params.get("vista") === "dia"),
@@ -150,7 +149,7 @@ function authorsCard(s: Stats, au: AuthorsResult, refresh: () => Promise<void>):
       const target = au.authors.find((b) => b.id === Number(sel.value));
       if (!sel.value || !target) return;
       if (!confirm(`¿Tratar «${a.label}» y «${target.label}» como la misma persona?\n\nSolo vos sabés si lo son: nombres parecidos no son prueba. Se puede deshacer.`)) { sel.value = ""; return; }
-      await api.mergeAuthor(a.id, target.id);
+      await mergeAuthor(a.id, target.id);
       toast("Alias unidos.");
       await refresh();
     })());
@@ -164,7 +163,7 @@ function authorsCard(s: Stats, au: AuthorsResult, refresh: () => Promise<void>):
       au.authors.slice(0, 50).map((a, i) => [n(i + 1),
         h("span", null, h("a", { href: "#/explorar?" + qs({ author_id: a.id }) }, a.label),
           a.aliases.map((x) => h("div", null, h("small", null, "+ " + x.label + " "),
-            h("button", { class: "ghost small", onclick: () => void api.unmergeAuthor(x.id).then(refresh) }, "separar")))),
+            h("button", { class: "ghost small", onclick: () => void unmergeAuthor(x.id).then(refresh) }, "separar")))),
         n(a.messages), pct(a.share), pct(c.curve[i]?.share), n(a.active_days), `${a.first_day} / ${a.last_day}`, mergeControl(a)])),
     h("small", null, `Se muestran hasta 50 de ${n(au.authors.length)}. «% acumulado» suma esa fila y todas las anteriores. Denominador: ${n(au.denominator)} mensajes de participantes.`));
 }

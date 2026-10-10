@@ -61,6 +61,41 @@ def test_documents_grouping_counts_and_filters(con):
     assert "no se puede saber" in lib["note"]
 
 
+def test_link_identity():
+    key, clean = resources.link_key, resources.clean_url
+    same = ["https://example.org/nota", "https://example.org/nota/", "https://www.example.org/nota", "https://m.example.org/nota",
+            "https://mobile.example.org/nota", "https://EXAMPLE.org/nota?utm_source=x", "https://example.org/nota/?utm_source=x&utm_medium=y"]
+    assert {key(u) for u in same} == {"https://example.org/nota"}
+    # utm_* se quita en cualquier posición; el resto de la consulta se conserva, en su orden y sin recodificar.
+    assert key("https://example.org/a?id=3&utm_campaign=z&p=%C3%B1") == key("https://example.org/a?id=3&p=%C3%B1") == "https://example.org/a?id=3&p=%C3%B1"
+    assert key("https://example.org/a?id=3") != key("https://example.org/a?id=4") != key("https://example.org/a")
+    assert key("https://example.org/Nota") != key("https://example.org/nota")            # la ruta sí distingue mayúsculas
+    assert key("https://example.org/a#x") != key("https://example.org/a")                # y el fragmento puede ser otra pantalla
+    assert key("https://m.co/x") == "https://m.co/x" and key("https://example.org:8443/a/") == "https://example.org:8443/a"
+    assert key("https://sitio.example/?utm_source=x") == key("https://sitio.example") == "https://sitio.example"
+    assert key("www.example.org/nota/") == "example.org/nota" and key("http://[mal") == "http://[mal"
+    # clean_url es la dirección que se muestra: la del chat, solo que sin seguimiento.
+    assert clean("https://www.example.org/nota/?utm_source=x") == "https://www.example.org/nota/"
+    assert clean("https://example.org/a?utm_source=x&id=3&UTM_Medium=y#parte") == "https://example.org/a?id=3#parte"
+    assert clean("https://example.org/a?id=3") == "https://example.org/a?id=3" and clean("https://example.org/utm_x") == "https://example.org/utm_x"
+
+
+def test_links_are_grouped_by_identity_before_counting(con):
+    lines = ["[6/1/26, 10:00:00] Dana Demo: https://www.example.org/nota/?utm_source=boletin",
+             "[6/2/26, 10:00:00] Jota Demo: https://example.org/nota",
+             "[6/3/26, 10:00:00] Dana Demo: https://m.example.org/nota?id=7&utm_medium=social",
+             "[6/4/26, 10:00:00] Jota Demo: https://example.org/nota?utm_campaign=x&id=7",
+             "[6/5/26, 10:00:00] Jota Demo: https://example.org/otra"]
+    cid = do_import(con, None, data="\n".join(lines).encode(), file_name="l.txt", date_order="MDY")["chat_id"]
+    lib = resources.library(con, cid, kind="link", order="shared")
+    assert lib["counts"]["links"] == 3 and lib["counts"]["link_shares"] == 5
+    assert [(l["key"], l["url"], l["shares"]) for l in lib["items"]] == [
+        ("https://example.org/nota?id=7", "https://m.example.org/nota?id=7", 2),
+        ("https://example.org/nota", "https://www.example.org/nota/", 2),
+        ("https://example.org/otra", "https://example.org/otra", 1)]
+    assert lib["items"][1]["sharers"] == ["Dana Demo", "Jota Demo"] and lib["items"][1]["last_shared"].startswith("2026-06-02")
+
+
 def test_links_grouped_by_url(con):
     cid = chat_with_docs(con)
     lib = resources.library(con, cid, kind="link")

@@ -14,10 +14,12 @@ const LINK_KINDS = ["article", "social", "tool"] as const;
 export const viewPeriodico: View = async () => {
   if (state.chatId == null) return emptyState();
   const chatId = state.chatId;
-  const chat = state.chats.find((c) => c.id === chatId);
-  const lastDay = chat?.last_record?.slice(0, 10) ?? isoDay(new Date());
-  const from = h("input", { type: "date", value: state.from || daysBefore(lastDay, 6), "aria-label": "Desde" });
-  const to = h("input", { type: "date", value: state.to || lastDay, "aria-label": "Hasta" });
+  // Lo que falte del rango lo completa el backend con la misma regla que la línea de comandos: la vista previa
+  // devuelve el rango resuelto y el último día con mensajes, y con eso se llenan los campos y los atajos.
+  let lastDay = "";
+  let asked = false;
+  const from = h("input", { type: "date", value: state.from, "aria-label": "Desde" });
+  const to = h("input", { type: "date", value: state.to, "aria-label": "Hasta" });
   const maxSel = h("select", null, [5, 8, 12, 15].map((x) => h("option", { value: x, selected: x === 8 }, String(x))));
   const orderSel = h("select", null, h("option", { value: "recent" }, "Los más recientes"), h("option", { value: "shared" }, "Los más compartidos"));
   const presets = h("div", { class: "presets" });
@@ -30,10 +32,10 @@ export const viewPeriodico: View = async () => {
 
   const markPreset = (): void => {
     presets.querySelectorAll("button").forEach((b) => b.classList.toggle("on",
-      to.value === lastDay && from.value === daysBefore(lastDay, Number(b.dataset["days"]))));
+      lastDay !== "" && to.value === lastDay && from.value === daysBefore(lastDay, Number(b.dataset["days"]))));
   };
   PRESETS.forEach((p) => presets.append(h("button", { type: "button", class: "ghost", "data-days": p.days,
-    onclick: () => { from.value = daysBefore(lastDay, p.days); to.value = lastDay; void refresh(); } }, p.label)));
+    onclick: () => { if (!lastDay) return; from.value = daysBefore(lastDay, p.days); to.value = lastDay; void refresh(); } }, p.label)));
 
   /** Solo se puede generar con artículos, con algún modelo y, si hay lecturas marcadas, con la confirmación. */
   const syncGo = (): void => {
@@ -42,10 +44,14 @@ export const viewPeriodico: View = async () => {
   };
 
   async function refresh(): Promise<void> {
-    markPreset();
     current = null; syncGo();
-    if (!from.value || !to.value || from.value > to.value) { put(found, h("p", { class: "error" }, "Elegí un rango de fechas válido.")); return; }
-    const p = await api.previewNewspaper(chatId, from.value, to.value, order(), Number(maxSel.value));
+    if (asked && (!from.value || !to.value || from.value > to.value)) { markPreset(); put(found, h("p", { class: "error" }, "Elegí un rango de fechas válido.")); return; }
+    asked = true;
+    let p: NewspaperPreview;
+    try { p = await api.previewNewspaper(chatId, from.value, to.value, order(), Number(maxSel.value)); }
+    catch (e) { put(found, h("p", { class: "error" }, errMsg(e))); return; }
+    from.value = p.from; to.value = p.to; lastDay = p.last_day ?? "";
+    markPreset();
     current = p;
     picker = modelPicker(p, syncGo);
     put(found, linksFound(p));

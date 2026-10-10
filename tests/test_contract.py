@@ -50,6 +50,17 @@ def test_every_object_type_is_closed():
     assert open_types == []
 
 
+def test_request_bodies_declare_the_same_fields_as_typescript():
+    """Cada cuerpo de solicitud tiene los mismos campos en types.ts y en los modelos de api.py."""
+    from community_lens import api
+    for name in ("ChatUpdateRequest", "ImportCommitRequest", "MergeAuthorRequest", "LabelsRequest", "RunStartRequest", "NewspaperRequest"):
+        model = getattr(api, name)
+        fields = {f.alias or k for k, f in model.model_fields.items()}
+        assert fields == set(SCHEMA["definitions"][name]["properties"]), name
+        required = {f.alias or k for k, f in model.model_fields.items() if f.is_required()}
+        assert required <= set(SCHEMA["definitions"][name].get("required", [])), name   # lo obligatorio para la API siempre viaja
+
+
 def test_responses_match_typescript_types(client):
     check("Config", ok(client.get("/api/config")))
     check("Chat", ok(client.get("/api/chats")), array=True)
@@ -80,7 +91,9 @@ def test_responses_match_typescript_types(client):
 
     check("Chat", ok(client.get("/api/chats")), array=True)
     check("ImportRecord", ok(client.get(f"/api/chats/{cid}/imports")), array=True)
-    check("ChatRow", ok(client.patch(f"/api/chats/{cid}", json={"timezone": "America/Costa_Rica", "reinterpret_imports": True})))
+    zone = {"timezone": "America/Costa_Rica", "reinterpret_imports": True}
+    check("ChatUpdateRequest", zone)
+    check("ChatRow", ok(client.patch(f"/api/chats/{cid}", json=zone)))
 
     # Estadísticas: con datos, con filtro y período vacío (promedios y hora pico en null)
     for params in ({}, {"from": "2026-02-01"}, {"from": "2030-01-01"}):
@@ -91,7 +104,9 @@ def test_responses_match_typescript_types(client):
     check("CategorySummary", ok(client.get("/api/classify/summary", params={"chat_id": cid})))
     check("CategoryMonthly", ok(client.get("/api/classify/monthly", params={"chat_id": cid})))
     check("RunListItem", ok(client.get("/api/classify/runs", params={"chat_id": cid})), array=True)
-    run = ok(client.post("/api/classify/runs", json={"chat_id": cid, "from": "", "to": "", "provider": "rules", "consent": False}))
+    start = {"chat_id": cid, "from": "", "to": "", "provider": "rules", "consent": False}
+    check("RunStartRequest", start)
+    run = ok(client.post("/api/classify/runs", json=start))
     check("RunStartResult", run)
     check("CategorySummary", ok(client.get("/api/classify/summary", params={"chat_id": cid})))
     check("CategoryMonthly", ok(client.get("/api/classify/monthly", params={"chat_id": cid})))
@@ -112,6 +127,8 @@ def test_responses_match_typescript_types(client):
         check("ResourceLibrary", ok(client.get("/api/resources", params={"chat_id": cid, **params})))
 
     # Correcciones humanas: etiquetar y revertir
+    check("LabelsRequest", {"categories": ["anuncio"]})
+    check("LabelsRequest", {"categories": None})
     check("LabelsResult", ok(client.post(f"/api/messages/{mid}/labels", json={"categories": ["anuncio"]})))
     labeled = ok(client.get("/api/search", params={"chat_id": cid, "human_only": "true"}))
     assert labeled["items"][0]["human"]["categories"] == ["anuncio"]
@@ -121,6 +138,7 @@ def test_responses_match_typescript_types(client):
 
     # Alias
     authors = ok(client.get("/api/authors", params={"chat_id": cid}))["authors"]
+    check("MergeAuthorRequest", {"into": authors[0]["id"]})
     check("OkResult", ok(client.post(f"/api/authors/{authors[1]['id']}/merge", json={"into": authors[0]["id"]})))
     merged = ok(client.get("/api/authors", params={"chat_id": cid}))
     assert merged["authors"][0]["aliases"]

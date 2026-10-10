@@ -1,4 +1,5 @@
 -r requirements.txt
 pytest>=8
 httpx>=0.27
+httpx2>=2.0  # el cliente HTTP del SDK de anthropic; las pruebas le pasan uno falso
 jsonschema>=4.20

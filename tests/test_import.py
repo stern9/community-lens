@@ -1,7 +1,7 @@
 import pytest
 
 from community_lens import importer, stats
-from conftest import do_import, fixture_bytes
+from conftest import FakeNet, do_import, fixture_bytes
 
 
 def count(con, sql="SELECT COUNT(*) FROM messages", *p):
@@ -40,6 +40,51 @@ def test_identical_reimport_is_noop(con):
     assert b["status"] == c["status"] == "duplicate"
     assert count(con) == before and count(con, "SELECT COUNT(*) FROM chats") == 1
     assert count(con, "SELECT COUNT(*) FROM imports") == 1
+
+
+def test_file_already_in_two_chats_is_a_duplicate_in_each(con):
+    a = do_import(con, "overlap_a.txt")
+    b = do_import(con, "overlap_b.txt")                      # otro archivo: grupo nuevo
+    assert do_import(con, "overlap_a.txt", chat_id=b["chat_id"])["status"] == "imported"   # el mismo archivo, ahora en los dos
+    before = count(con)
+    for cid in (b["chat_id"], a["chat_id"], None):
+        again = do_import(con, "overlap_a.txt", chat_id=cid)
+        assert again["status"] == "duplicate" and again["chat_id"] == (cid or a["chat_id"])
+    assert count(con) == before and count(con, "SELECT COUNT(*) FROM imports") == 3 and not con.in_transaction
+
+
+@pytest.mark.parametrize("first, second", [("media_omitted.txt", "media_attached.txt"), ("media_attached.txt", "media_omitted.txt")])
+def test_exports_with_and_without_media_are_the_same_messages(con, first, second):
+    a = do_import(con, first)
+    pv = importer.preview(con, fixture_bytes(second), second, None, None)
+    assert pv["recommendation"]["action"] == "update" and pv["candidates"][0]["matched"] == 3
+    b = do_import(con, second, chat_id=a["chat_id"])
+    assert b["reconciliation"]["matched_existing"] == 3 and b["reconciliation"]["added"] == 0
+    assert count(con, "SELECT COUNT(*) FROM messages WHERE record_type='message'") == 3
+    assert count(con, "SELECT COUNT(*) FROM message_sources s JOIN messages m ON m.id=s.message_id WHERE m.media_kind IS NOT NULL") == 2
+
+
+def test_database_created_with_the_old_match_key_still_reconciles(con):
+    """Una base anterior guarda claves calculadas sobre el texto con el marcador de adjunto. Siguen sirviendo."""
+    import hashlib
+    import re
+
+    def old_key(r):
+        norm = re.sub(r"\s+", " ", importer.P.strip_marks(r["text"])).strip()
+        author = importer.P.clean_author(r["author_raw"]) if r["author_raw"] else ""
+        return hashlib.sha1(f"{r['ts_utc']}\x1f{author}\x1f{norm}".encode()).hexdigest()
+
+    a = do_import(con, "media_omitted.txt")
+    rows = con.execute("SELECT id, ts_utc, author_raw, text, match_key, media_kind FROM messages ORDER BY seq").fetchall()
+    # La regla vieja y la nueva solo difieren en el mensaje con adjunto.
+    assert [old_key(r) == r["match_key"] for r in rows] == [True, False, True]
+    con.executemany("UPDATE messages SET match_key=? WHERE id=?", [(old_key(r), r["id"]) for r in rows])
+    assert do_import(con, "media_attached.txt", chat_id=a["chat_id"])["reconciliation"]["added"] == 0
+    assert count(con) == 3
+    # Y un mensaje nuevo que llega después entra una sola vez, con referencia propia.
+    more = fixture_bytes("media_attached.txt") + "[3/20/26, 10:03:00] Beto Ensayo: \u200e<attached: 00000004-PHOTO-2026-03-20-10-03-00.jpg>\n".encode()
+    r = do_import(con, None, data=more, file_name="mas.txt", chat_id=a["chat_id"])
+    assert r["reconciliation"]["added"] == 1 and count(con) == 4 and count(con, "SELECT COUNT(DISTINCT uid) FROM messages") == 4
 
 
 def test_legitimate_repeats_survive(con):
@@ -130,3 +175,33 @@ def test_delete_chat_removes_derived_data(con):
         assert count(con, f"SELECT COUNT(*) FROM {t}") == 0, t
     assert count(con, "SELECT COUNT(*) FROM messages_fts") == count(con, "SELECT COUNT(*) FROM messages WHERE chat_id=?", b["chat_id"])
     assert count(con, "SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH 'curso'") == 0
+
+
+def test_delete_chat_removes_pages_read_for_the_newspaper(con):
+    """La tabla pages no cuelga de un chat: al eliminar un grupo se van las páginas que ya nadie más enlaza."""
+    from community_lens import newspaper
+    text = "Texto de la nota. " * 30
+
+    def chat(name, *urls):
+        lines = "".join(f"[10/{i}/26, 9:00:00 AM] ~ Ana Demo: mirá {u}\n" for i, u in enumerate(urls, 1))
+        cid = do_import(con, None, data=(lines + f"[10/9/26, 9:00:00 AM] ~ Ana Demo: soy {name}\n").encode(), file_name=f"{name}.txt",
+                        date_order="MDY")["chat_id"]
+        items = newspaper.candidates(con, cid, "2026-10-01", "2026-10-31")["items"]["article"]
+        assert len(items) == len(urls)
+        newspaper.load_pages(con, items, FakeNet(lambda url: (200, {}, f"<title>t</title><p>{text}</p>")))
+        return cid
+
+    pages = lambda: sorted(r["url"] for r in con.execute("SELECT url FROM pages"))
+    solo = chat("Solo", "https://example.org/nota/solo?utm_source=x", "https://example.org/nota/otra")
+    assert pages() == ["https://example.org/nota/otra", "https://example.org/nota/solo"]
+    assert importer.delete_chat(con, solo)["deleted"] and pages() == []
+
+    # Dos grupos con el mismo enlace (escrito distinto): la página se conserva mientras uno de los dos lo tenga.
+    a = chat("A", "https://www.example.org/nota/comun/", "https://example.org/nota/de-a")
+    b = chat("B", "https://example.org/nota/comun?utm_medium=social", "https://example.org/nota/de-b")
+    con.execute("INSERT INTO pages(url, kind, status, fetched_at) VALUES ('https://viejo.example/huerfana', 'article', 'ok', 'x')")
+    assert len(pages()) == 4
+    importer.delete_chat(con, a)
+    assert pages() == ["https://example.org/nota/comun", "https://example.org/nota/de-b"]
+    importer.delete_chat(con, b)
+    assert pages() == [] and count(con, "SELECT COUNT(*) FROM links") == 0

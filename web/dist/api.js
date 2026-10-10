@@ -66,10 +66,11 @@ export const setLabels = (messageId, categories) => sendJson(`/api/messages/${me
 export const getCategorySummary = (s) => getJson("/api/classify/summary?" + scopeQs(s));
 export const getCategoryMonthly = (s) => getJson("/api/classify/monthly?" + scopeQs(s));
 export const getRuns = (chatId) => getJson("/api/classify/runs?" + qs({ chat_id: chatId }));
-export const startRun = (s, provider, consent) => sendJson("/api/classify/runs", { chat_id: s.chat_id, from: s.from, to: s.to, provider, consent });
+export const startRun = (req) => sendJson("/api/classify/runs", req);
 export const activateRun = (runId) => sendJson(`/api/classify/runs/${runId}/activate`, {});
 export const reportUrl = (s, format, includeAuthors, download = false) => "/api/report?" + qs({ chat_id: s.chat_id, from: s.from, to: s.to, format, include_authors: includeAuthors && "true", download: download && "true" });
 export const getReportText = async (s, includeAuthors) => (await request(reportUrl(s, "txt", includeAuthors))).text();
+/** `from` o `to` vacíos: el backend completa el rango por defecto (termina el último día con mensajes). */
 export const previewNewspaper = (chatId, from, to, order, maxArticles) => getJson("/api/newspaper/preview?" + qs({ chat_id: chatId, from, to, order, max_articles: maxArticles }));
 export const generateNewspaper = (req) => sendJson("/api/newspaper/editions", req);
 export const getEditions = (chatId) => getJson("/api/newspaper/editions?" + qs({ chat_id: chatId }));

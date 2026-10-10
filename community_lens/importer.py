@@ -29,9 +29,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import parser as P
 from .config import settings
+from .resources import link_key
 
 MAX_BYTES = 50 * 1024 * 1024
-_WS = re.compile(r"\s+")
 
 
 class ImportError_(Exception):
@@ -106,11 +106,15 @@ def suggest_name(file_name: str) -> str:
     return n or Path(file_name).stem or "Chat"
 
 
-def match_key(ts_utc: datetime, author_raw: str | None, text: str, minute: bool) -> str:
-    t = ts_utc.replace(second=0) if minute else ts_utc
-    norm = _WS.sub(" ", P.strip_marks(text)).strip()
+def _key(ts_utc: str, author_raw: str | None, text: str, minute: bool) -> str:
+    """Clave de reconciliación: instante (al segundo o al minuto), autor y texto sin marcadores de adjunto."""
+    t = ts_utc[:17] + "00Z" if minute else ts_utc
     author = P.clean_author(author_raw) if author_raw else ""
-    return hashlib.sha1(f"{fmt_utc(t)}\x1f{author}\x1f{norm}".encode()).hexdigest()
+    return hashlib.sha1(f"{t}\x1f{author}\x1f{P.match_text(text)}".encode()).hexdigest()
+
+
+def match_key(ts_utc: datetime, author_raw: str | None, text: str, minute: bool) -> str:
+    return _key(fmt_utc(ts_utc), author_raw, text, minute)
 
 
 # ---------------------------------------------------------------- staging --
@@ -154,7 +158,7 @@ def clear_staging(older_than_seconds: float = 0) -> None:
 
 def _existing(con, chat_id: int) -> list[dict]:
     return [dict(r) for r in con.execute(
-        "SELECT id, seq, ts_utc, author_raw, text, match_key FROM messages WHERE chat_id=? ORDER BY seq", (chat_id,))]
+        "SELECT id, seq, ts_utc, author_raw, text FROM messages WHERE chat_id=? ORDER BY seq", (chat_id,))]
 
 
 def _chat_minute_precision(con, chat_id: int, new_has_seconds: bool) -> bool:
@@ -163,10 +167,10 @@ def _chat_minute_precision(con, chat_id: int, new_has_seconds: bool) -> bool:
 
 
 def _keys_for(existing: list[dict], minute: bool) -> list[str]:
-    if not minute:
-        return [e["match_key"] for e in existing]
-    return [match_key(datetime.strptime(e["ts_utc"], "%Y-%m-%dT%H:%M:%SZ"), e["author_raw"], e["text"], True)
-            for e in existing]
+    """Claves de lo ya guardado, SIEMPRE recalculadas desde el instante, el autor y el texto.
+    La columna messages.match_key no se usa para comparar: en una base creada antes de que la clave ignorara
+    los marcadores de adjunto guarda la clave vieja, y así ambas bases reconcilian igual sin migrar nada."""
+    return [_key(e["ts_utc"], e["author_raw"], e["text"], minute) for e in existing]
 
 
 def _window(existing: list[dict], lo_utc: str, hi_utc: str) -> tuple[int, int]:
@@ -288,10 +292,12 @@ def commit(con, token: str, file_name: str, *, chat_id: int | None, chat_name: s
     for k in ("period_start", "period_end"):
         diag[k] = fmt_local(diag[k]) if diag[k] else None
 
+    # ¿Este archivo exacto ya está? Con un grupo elegido se mira solo ese grupo (el mismo archivo puede estar
+    # en otro); sin grupo, cualquiera cuenta.
     other = con.execute(
-        "SELECT i.id, i.chat_id, c.name FROM imports i JOIN chats c ON c.id=i.chat_id WHERE i.file_sha256=?",
-        (token,)).fetchone()
-    if other and (chat_id is None or other["chat_id"] == chat_id):
+        "SELECT i.id, i.chat_id, c.name FROM imports i JOIN chats c ON c.id=i.chat_id "
+        "WHERE i.file_sha256=? AND (? IS NULL OR i.chat_id=?) ORDER BY i.id", (token, chat_id, chat_id)).fetchone()
+    if other:
         unstage(token)
         return {"status": "duplicate", "chat_id": other["chat_id"], "import_id": other["id"],
                 "message": f"Este archivo ya estaba importado en «{other['name']}». No se modificó nada."}
@@ -346,8 +352,7 @@ def commit(con, token: str, file_name: str, *, chat_id: int | None, chat_name: s
         ops = SequenceMatcher(None, win_keys, new_keys, autojunk=False).get_opcodes() if win else \
             [("insert", 0, 0, 0, len(recs))]
 
-        uid_seen = Counter(r["match_key"] for r in con.execute(
-            "SELECT match_key FROM messages WHERE chat_id=?", (chat_id,)))
+        uid_seen = Counter(_keys_for(existing, False))
         authors: dict = {}
         merged: list[int] = []  # ids en el orden final de la ventana
         summary = {"matched_existing": 0, "added": 0, "only_in_previous": 0, "ambiguous_pairs": 0,
@@ -448,12 +453,18 @@ def retime_chat(con, chat_id: int, tz_name: str, reinterpret_imports: bool) -> N
 
 
 def delete_chat(con, chat_id: int) -> dict:
-    """Elimina el chat y todo lo derivado (mensajes, índice, enlaces, clasificaciones, correcciones)."""
+    """Elimina el chat y todo lo derivado (mensajes, índice, enlaces, clasificaciones, correcciones,
+    ediciones del periódico y el texto de las páginas que se leyeron para ellas)."""
     n = con.execute("SELECT COUNT(*) c FROM messages WHERE chat_id=?", (chat_id,)).fetchone()["c"]
     con.execute("BEGIN IMMEDIATE")
     try:
         con.execute("DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE chat_id=?)", (chat_id,))
         cur = con.execute("DELETE FROM chats WHERE id=?", (chat_id,))  # cascada al resto
+        # pages no tiene chat_id (una página puede venir de varios grupos), así que la cascada no la alcanza:
+        # se borra toda página cuyo enlace ya no figura en ningún grupo de los que quedan.
+        kept = {link_key(r["url"]) for r in con.execute("SELECT DISTINCT url FROM links")}
+        con.executemany("DELETE FROM pages WHERE url=?",
+                        [(r["url"],) for r in con.execute("SELECT url FROM pages").fetchall() if link_key(r["url"]) not in kept])
         con.execute("COMMIT")
     except Exception:
         con.execute("ROLLBACK")

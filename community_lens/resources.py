@@ -1,17 +1,56 @@
 """Biblioteca de recursos: documentos y enlaces compartidos en un chat.
 
 Responde "¿dónde está ese archivo y cuál es la última versión?" sin leer el historial.
-Es determinista: agrupa por nombre de archivo (o por URL) tal como figura en la exportación.
+Es determinista: agrupa por nombre de archivo tal como figura en la exportación, o por la identidad del enlace.
 El archivo en sí no está en el TXT; aquí solo consta que se compartió, cuándo y por quién.
 """
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit
 
 _EXT = re.compile(r"\.(pdf|docx?|xlsx?|pptx?|md|txt|csv|zip|key|pages|numbers|json|html?|epub|png|jpe?g)$", re.I)
 _COPY = re.compile(r"\s*\(\d+\)$")                       # "informe (1).pdf": copia descargada
 _VERSION = re.compile(r"(?:^|[-_ .])v(?:er(?:si[oó]n)?)?[-_ .]?(\d+(?:[._]\d+)*)$", re.I)
 _SEP = re.compile(r"[-_\s]+")
+
+
+# ---------------------------------------------------------------- enlaces --
+# Qué es "el mismo enlace" se define acá y en ningún otro lado. Recursos, el periódico y las páginas
+# guardadas (tabla pages) agrupan por link_key() y muestran clean_url().
+_TRACKING = "utm_"                       # parámetros de seguimiento: no cambian la página
+_HOST_PREFIXES = ("www.", "m.", "mobile.")
+
+
+def _without_tracking(query: str) -> str:
+    return "&".join(part for part in query.split("&") if part and not part.lower().startswith(_TRACKING))
+
+
+def clean_url(url: str) -> str:
+    """La URL tal como se compartió, sin parámetros utm_* (en cualquier posición). Es la que se muestra y se abre."""
+    head, sep, fragment = url.partition("#")
+    base, mark, query = head.partition("?")
+    if not mark:
+        return url
+    query = _without_tracking(query)
+    return base + ("?" + query if query else "") + sep + fragment
+
+
+def link_key(url: str) -> str:
+    """Identidad de un enlace: dos URLs con la misma clave son el mismo enlace.
+    No distingue mayúsculas en el dominio, prefijos www./m./mobile., barra final ni parámetros utm_*.
+    Es una clave para agrupar, no una dirección: no se abre ni se muestra."""
+    try:
+        parts = urlsplit(url if "://" in url else "//" + url)
+        host, port = parts.hostname or "", parts.port
+    except ValueError:  # dirección mal formada: se compara tal cual
+        return url.rstrip("/")
+    for prefix in _HOST_PREFIXES:
+        if host.startswith(prefix) and "." in host[len(prefix):]:
+            host = host[len(prefix):]
+    query = _without_tracking(parts.query)
+    return ((parts.scheme.lower() + "://" if parts.scheme else "") + host + (f":{port}" if port else "") + parts.path.rstrip("/")
+            + ("?" + query if query else "") + ("#" + parts.fragment if parts.fragment else ""))
 
 
 def split_name(name: str) -> tuple[str, str, tuple[int, ...] | None]:
@@ -91,8 +130,8 @@ def links(con, chat_id: int, d_from: str | None = None, d_to: str | None = None)
             WHERE {where} ORDER BY m.seq""", p).fetchall()
     groups: dict[str, dict] = {}
     for r in rows:
-        key = r["url"].rstrip("/")
-        g = groups.setdefault(key, {"kind": "link", "key": key, "url": r["url"], "domain": r["domain"], "messages": set(),
+        key = link_key(r["url"])
+        g = groups.setdefault(key, {"kind": "link", "key": key, "url": clean_url(r["url"]), "domain": r["domain"], "messages": set(),
                                     "first_shared": r["ts_local"], "sharers": set()})
         g["messages"].add(r["id"])
         g["last_shared"], g["message_id"], g["author"] = r["ts_local"], r["id"], r["author"]

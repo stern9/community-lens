@@ -80,6 +80,7 @@ _SYSTEM_PATTERNS: list[tuple[str, re.Pattern]] = [
 _GROUP_AUTHOR_HINT = re.compile(
     r"end-to-end encrypted|cifrad[oa]s? de extremo a extremo|Welcome to the group|Te damos la bienvenida", re.I)
 
+_WS_RE = re.compile(r"\s+")
 _URL_RE = re.compile(r"(?:https?://|www\.)[^\s<>\"'‎]+", re.I)
 _PHONE_RE = re.compile(r"^\+?[\d\s\-() ‑.]{7,}$")
 _SELF_LABELS = {"you", "tú", "tu", "usted", "yo"}
@@ -87,6 +88,15 @@ _SELF_LABELS = {"you", "tú", "tu", "usted", "yo"}
 
 def strip_marks(s: str) -> str:
     return _MARKS_RE.sub("", s)
+
+
+def match_text(text: str) -> str:
+    """Forma del texto que se usa para reconocer el mismo mensaje en dos exportaciones.
+    El marcador de adjunto no cuenta: una exportación "sin archivos" trae «image omitted» donde la exportación
+    "con archivos" trae «<attached: 0001-PHOTO.jpg>», y es el mismo mensaje. Solo sirve para comparar."""
+    t = _ATTACHED_RE.sub(" ", _MEDIA_MARKED_RE.sub(" ", text))
+    t = _WS_RE.sub(" ", strip_marks(t)).strip()
+    return "" if _MEDIA_WHOLE_RE.match(t) else t
 
 
 def clean_author(raw: str) -> str:

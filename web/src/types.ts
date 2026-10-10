@@ -4,6 +4,9 @@
 // coincidan: `npm run schema` genera web/src/api-schema.json a partir de este archivo y la prueba
 // tests/test_contract.py valida las respuestas reales de la API contra ese esquema (sin permitir
 // campos de más ni de menos). Si el backend cambia y este archivo no, esa prueba falla.
+//
+// Los tipos `…Request` son los cuerpos que envía el frontend. El backend declara los mismos campos
+// (modelos de community_lens/api.py) y la misma prueba compara unos con otros.
 
 export type CategoryKey =
   | "pregunta"
@@ -75,6 +78,13 @@ export interface Chat extends ChatRow {
   participant_messages: number;
   flagged_for_review: number;
   imports: number;
+}
+
+/** Cambios a un grupo: solo se envía lo que cambia. */
+export interface ChatUpdateRequest {
+  name?: string;
+  timezone?: string;
+  reinterpret_imports?: boolean;
 }
 
 export interface DeleteChatResult {
@@ -399,6 +409,11 @@ export interface AuthorRow {
   aliases: AuthorAlias[];
 }
 
+export interface MergeAuthorRequest {
+  /** Identificador del alias que queda como principal. */
+  into: number;
+}
+
 export interface AuthorsResult {
   denominator: number;
   authors: AuthorRow[];
@@ -483,6 +498,12 @@ export interface ContextResult {
   chat_id: number;
   items: Message[];
   note: string;
+}
+
+/** `categories = null` vuelve a la clasificación automática. */
+export interface LabelsRequest {
+  categories: CategoryKey[] | null;
+  note?: string;
 }
 
 export interface LabelsResult {
@@ -578,8 +599,11 @@ export interface NewspaperFacts {
 
 /** Qué entraría en una edición y qué saldría de la máquina. Calcularla no envía nada. */
 export interface NewspaperPreview {
+  /** Rango ya resuelto: si la consulta no traía fechas, el rango por defecto. */
   from: IsoDay;
   to: IsoDay;
+  /** Último día con mensajes de participantes: desde ahí cuentan "última semana" y los demás atajos. */
+  last_day: IsoDay | null;
   facts: NewspaperFacts;
   links: { article: NewspaperLink[]; social: NewspaperLink[]; tool: NewspaperLink[] };
   links_total: { article: number; social: number; tool: number };
@@ -697,6 +721,15 @@ export interface CategoryMonthly {
   months: CategoryMonth[];
   /** Ausente cuando todavía no hay ninguna ejecución. */
   note?: string;
+}
+
+export interface RunStartRequest {
+  chat_id: number;
+  /** "" = sin límite. */
+  from: IsoDay | "";
+  to: IsoDay | "";
+  provider: ProviderName;
+  consent: boolean;
 }
 
 export interface RunStartResult {

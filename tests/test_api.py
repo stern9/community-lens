@@ -90,6 +90,60 @@ def test_content_is_served_as_data_not_markup(client):
     assert "default-src 'self'" in csp and "unsafe-inline" not in csp and "unsafe-eval" not in csp
 
 
+def test_nothing_is_written_before_the_whole_request_is_valid(client):
+    pv = upload(client, "overlap_a.txt").json()
+    cid = client.post("/api/imports/commit", json={"token": pv["token"], "file_name": "a.txt", "date_order": "MDY", "chat_name": "Original"}).json()["chat_id"]
+    before = client.get("/api/chats").json()[0]
+    for body in ({"name": "Nuevo", "timezone": "Marte/Olympus"}, {"name": "   ", "timezone": "Europe/Madrid"},
+                 {"name": "Nuevo", "timezone": 5}, {"name": ["Nuevo"]}, {"name": "Nuevo", "reinterpret_imports": "no"}):
+        assert client.patch(f"/api/chats/{cid}", json=body).status_code == 422, body
+        assert client.get("/api/chats").json()[0] == before, body          # ni el nombre ni la zona cambiaron
+    ok = client.patch(f"/api/chats/{cid}", json={"name": " Nuevo ", "timezone": "Europe/Madrid"})
+    assert ok.status_code == 200 and (ok.json()["name"], ok.json()["timezone"]) == ("Nuevo", "Europe/Madrid")
+    assert client.patch(f"/api/chats/{cid}", json={}).json()["name"] == "Nuevo"
+
+
+def test_malformed_bodies_are_rejected_with_422_never_500(client):
+    pv = upload(client, "ios_mdy_24h.txt").json()
+    cid = client.post("/api/imports/commit", json={"token": pv["token"], "file_name": "x.txt", "date_order": "MDY"}).json()["chat_id"]
+    authors = client.get("/api/authors", params={"chat_id": cid}).json()["authors"]
+    mid = client.get("/api/search", params={"chat_id": cid}).json()["items"][0]["id"]
+    news = {"chat_id": cid, "from": "2026-01-01", "to": "2026-02-28"}
+    bad = [
+        ("/api/classify/runs", {"chat_id": None}), ("/api/classify/runs", {"chat_id": "x"}), ("/api/classify/runs", {}),
+        ("/api/classify/runs", {"chat_id": True}), ("/api/classify/runs", {"chat_id": cid, "from": 20260101}),
+        ("/api/classify/runs", {"chat_id": cid, "to": ["2026-01-01"]}), ("/api/classify/runs", {"chat_id": cid, "consent": "true"}),
+        ("/api/classify/runs", {"chat_id": cid, "provider": None}), ("/api/classify/runs", [cid]),
+        (f"/api/authors/{authors[1]['id']}/merge", {"into": "x"}), (f"/api/authors/{authors[1]['id']}/merge", {"into": None}),
+        (f"/api/authors/{authors[1]['id']}/merge", {}),
+        ("/api/imports/commit", {"token": None}), ("/api/imports/commit", {"token": pv["token"], "chat_id": "x"}),
+        ("/api/imports/commit", {"token": pv["token"], "date_order": 3}), ("/api/imports/commit", {"token": pv["token"], "confirm_low_overlap": "si"}),
+        (f"/api/messages/{mid}/labels", {"categories": "anuncio"}), (f"/api/messages/{mid}/labels", {"categories": [1]}),
+        (f"/api/messages/{mid}/labels", {"categories": ["anuncio"], "note": 5}),
+        ("/api/newspaper/editions", {**news, "chat_id": None}), ("/api/newspaper/editions", {**news, "chat_id": "x"}),
+        ("/api/newspaper/editions", {**news, "max_articles": "muchos"}), ("/api/newspaper/editions", {**news, "max_articles": None}),
+        ("/api/newspaper/editions", {**news, "readers": "anthropic"}), ("/api/newspaper/editions", {**news, "consent_chat": 1, "readers": ["anthropic"]}),
+        ("/api/newspaper/editions", {**news, "order": "raro"}), ("/api/newspaper/editions", {**news, "from": 1}),
+        ("/api/newspaper/editions", {**news, "to": None}), ("/api/newspaper/editions", {**news, "editor": None}),
+        ("/api/newspaper/editions", {**news, "from": ""}), ("/api/newspaper/editions", {"chat_id": cid, "from": "2026-01-01"}),
+        ("/api/newspaper/editions", {**news, "from": "2026-02-30"}), ("/api/newspaper/editions", {**news, "to": "ayer"}),
+        ("/api/newspaper/editions", {**news, "from": "2026-03-01"}), ("/api/newspaper/editions", {**news, "max_articles": 50}),
+        ("/api/newspaper/editions", {**news, "max_articles": 2}),
+    ]
+    for path, body in bad:
+        r = client.post(path, json=body)
+        assert r.status_code == 422, (path, body, r.status_code, r.text[:200])
+    # Nada de lo anterior dejó rastro.
+    assert client.get("/api/classify/runs", params={"chat_id": cid}).json() == []
+    assert client.get("/api/newspaper/editions", params={"chat_id": cid}).json() == []
+    assert all(not a["aliases"] for a in client.get("/api/authors", params={"chat_id": cid}).json()["authors"])
+    assert client.get("/api/search", params={"chat_id": cid, "human_only": "true"}).json()["total"] == 0
+    assert len(client.get("/api/chats").json()) == 1
+    for params in ({"from": "2026-13-01"}, {"to": "1/2/26"}, {"from": "2026-02-01", "to": "2026-01-01"}, {"max_articles": 50},
+                   {"max_articles": 2}, {"max_articles": "x"}, {"order": "raro"}):
+        assert client.get("/api/newspaper/preview", params={"chat_id": cid, **params}).status_code == 422, params
+
+
 FRONTEND = sorted((WEB / "src").rglob("*.ts")) + sorted((WEB / "dist").rglob("*.js"))
 
 
@@ -103,6 +157,18 @@ def test_frontend_never_builds_html_from_strings():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert "onclick=" not in html and "<script>" not in html and "http" not in html.replace("http-equiv", "")
     assert 'src="dist/app.js"' in html and not (WEB / "app.js").exists()
+
+
+def test_only_state_module_changes_what_is_selected_or_cached():
+    """Grupo, período y lo guardado en memoria se cambian solo desde state.ts (selectChat, setPeriod…):
+    así ninguna vista puede dejar datos de otro grupo o de otro período a la vista."""
+    for f in sorted((WEB / "src").rglob("*.ts")):
+        code = re.sub(r"//.*", "", f.read_text(encoding="utf-8"))
+        assert "state.authors" not in code, f.name
+        if f.name != "state.ts":
+            assert not re.search(r"\bstate\.(chatId|chats|from|to)\s*=(?!=)", code), f.name
+    explorar = (WEB / "src" / "views" / "explorar.ts").read_text(encoding="utf-8")
+    assert "chatAuthors()" in explorar and "getAuthors" not in explorar
 
 
 def test_no_whatsapp_deep_links_are_invented():

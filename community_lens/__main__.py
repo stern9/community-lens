@@ -1,16 +1,31 @@
 """Arranque: python -m community_lens  (o `python -m community_lens periodico …` sin pantalla; ver cli.py)"""
 import logging
+import sys
 
 import uvicorn
 
 from .config import settings
 
+USAGE = """uso: python -m community_lens [periodico …]
 
-def main() -> None:
-    import sys
-    if sys.argv[1:2] == ["periodico"]:
+  (sin argumentos)  levanta la app local (por defecto en http://127.0.0.1:8765; ver CL_HOST y CL_PORT en .env)
+  periodico …       genera y publica el periódico sin pantalla; ver `python -m community_lens periodico --help`
+  -h, --help        muestra esta ayuda
+"""
+
+
+def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["periodico"]:
         from .cli import periodico
-        raise SystemExit(periodico(sys.argv[2:]))
+        raise SystemExit(periodico(argv[1:]))
+    if argv[:1] in (["-h"], ["--help"]):
+        print(USAGE, end="")
+        raise SystemExit(0)
+    if argv:
+        # Cualquier otra cosa es un error de tipeo: no se arranca nada ni se toca el disco.
+        print(f"Argumento desconocido: {argv[0]}\n\n{USAGE}", end="", file=sys.stderr)
+        raise SystemExit(2)
     s = settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if s.host not in ("127.0.0.1", "localhost", "::1"):

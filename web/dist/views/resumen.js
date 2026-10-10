@@ -7,12 +7,11 @@ import { h, hbars, kind, put, table } from "../dom.js";
 import { DAY_ORDER, dec, monthLabel, n, pad2, pct, weekdayName } from "../format.js";
 import { PROVIDER, SUBTYPE } from "../labels.js";
 import { emptyState, toast, view } from "../shell.js";
-import { categories, scope, state } from "../state.js";
+import { categories, mergeAuthor, scope, state, unmergeAuthor } from "../state.js";
 export const viewResumen = async ({ params, refresh }) => {
     if (state.chatId == null)
         return emptyState();
     const [s, au, cats] = await Promise.all([api.getStats(scope()), api.getAuthors(scope()), api.getCategorySummary(scope())]);
-    state.authors = au.authors;
     put(view, factsCard(s), activityCard(s, params.get("vista") === "dia"), rhythmCard(s, params.get("ritmo") === "calor"), categoriesAndReviewCards(s, cats), authorsCard(s, au, refresh), domainsAndRecordsCards(s));
 };
 /** Métricas con su denominador, meses parciales, días sin mensajes y definiciones. */
@@ -107,14 +106,14 @@ function authorsCard(s, au, refresh) {
                 sel.value = "";
                 return;
             }
-            await api.mergeAuthor(a.id, target.id);
+            await mergeAuthor(a.id, target.id);
             toast("Alias unidos.");
             await refresh();
         })());
         return sel;
     };
     return h("section", { class: "card authors" }, h("h2", null, "Identificadores de autor por actividad", kind("fact", "hecho")), h("p", null, h("small", null, au.note)), c.half_rank ? h("p", null, `La mitad de los mensajes la ${c.half_rank === 1 ? "escribió el identificador más activo" : `escribieron los ${n(c.half_rank)} identificadores más activos`}, de ${n(c.curve.length)} que participaron.`) : null, table([{ t: "#", num: true }, { t: "Identificador" }, { t: "Mensajes", num: true }, { t: "% del total", num: true }, { t: "% acumulado", num: true }, { t: "Días activos", num: true }, { t: "Primer / último día" }, { t: "Reconciliar alias" }], au.authors.slice(0, 50).map((a, i) => [n(i + 1),
-        h("span", null, h("a", { href: "#/explorar?" + qs({ author_id: a.id }) }, a.label), a.aliases.map((x) => h("div", null, h("small", null, "+ " + x.label + " "), h("button", { class: "ghost small", onclick: () => void api.unmergeAuthor(x.id).then(refresh) }, "separar")))),
+        h("span", null, h("a", { href: "#/explorar?" + qs({ author_id: a.id }) }, a.label), a.aliases.map((x) => h("div", null, h("small", null, "+ " + x.label + " "), h("button", { class: "ghost small", onclick: () => void unmergeAuthor(x.id).then(refresh) }, "separar")))),
         n(a.messages), pct(a.share), pct(c.curve[i]?.share), n(a.active_days), `${a.first_day} / ${a.last_day}`, mergeControl(a)])), h("small", null, `Se muestran hasta 50 de ${n(au.authors.length)}. «% acumulado» suma esa fila y todas las anteriores. Denominador: ${n(au.denominator)} mensajes de participantes.`));
 }
 function domainsAndRecordsCards(s) {

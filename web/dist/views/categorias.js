@@ -16,7 +16,7 @@ export const viewCategorias = async ({ refresh }) => {
     state.config = cfg;
     const taxo = cfg.taxonomy.categories;
     const jev = cfg.providers.find((p) => p.name === "jev");
-    put(view, summaryCard(cats, taxo, jev), cats.run ? trendCard(monthly, taxo) : null, reviewCard(cats), runCard(runs, jev, refresh));
+    put(view, summaryCard(cats, taxo, jev), cats.run ? trendCard(monthly, taxo) : null, reviewCard(cats), runCard(chatId, runs, jev, refresh));
 };
 /** Cuántos mensajes tiene cada categoría según la ejecución vigente, con las correcciones humanas aplicadas. */
 function summaryCard(cats, taxo, jev) {
@@ -52,12 +52,12 @@ function reviewCard(cats) {
     return h("section", { class: "card" }, h("h2", null, "Revisión humana", kind("pending", "interpretación pendiente")), h("p", null, h("small", null, "Una categoría automática es una hipótesis hasta que alguien la revisa. Corregir agrega tu etiqueta sin borrar la predicción original.")), h("div", { class: "row" }, h("a", { href: "#/explorar?" + qs({ category: "oferta_de_colaboracion" }) }, "Revisar ofertas de colaboración"), "·", h("a", { href: "#/explorar?" + qs({ category: "propuesta_de_proyecto" }) }, "Revisar propuestas"), "·", h("a", { href: "#/explorar?" + qs({ human_only: 1 }) }, `Ver corregidos a mano (${n(cats.corrected_messages)})`), "·", h("a", { href: "#/explorar?" + qs({ review_only: 1, record_type: "all" }) }, "Registros marcados al importar")));
 }
 /** Lanzar una clasificación (reglas locales o Jev, con confirmación) y elegir cuál ejecución guardada rige. */
-function runCard(runs, jev, refresh) {
+function runCard(chatId, runs, jev, refresh) {
     const busy = h("span", { class: "muted" });
     const start = async (provider, consent) => {
         busy.textContent = "Clasificando…";
         try {
-            const r = await api.startRun(scope(), provider, consent);
+            const r = await api.startRun({ chat_id: chatId, from: state.from, to: state.to, provider, consent });
             if (!r.activated)
                 alert(`Ejecución #${r.run_id} guardada: clasificó ${n(r.classified)} de ${n(r.eligible)} mensajes.\n\nComo cubre menos que la clasificación vigente (#${r.active_run_id}), NO la reemplazó. Podés verla o activarla en "Ejecuciones guardadas", más abajo.`);
             else

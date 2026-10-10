@@ -5,16 +5,16 @@ import { messageCard } from "../components/message.js";
 import { h, put } from "../dom.js";
 import { n } from "../format.js";
 import { view, type View } from "../shell.js";
-import { categories, scope, state } from "../state.js";
+import { categories, chatAuthors, scope, state } from "../state.js";
 
 export const viewExplorar: View = async ({ params }) => {
   const f = readFilters(params);
-  if (state.chatId != null && !state.authors.length) state.authors = (await api.getAuthors({ chat_id: state.chatId, from: "", to: "" })).authors;
+  const authors = await chatAuthors();  // del grupo activo, en todo su historial: no los del período que mostró Resumen
   const select = (label: string, current: string, options: readonly (readonly [string, string])[]): HTMLSelectElement =>
     h("select", { "aria-label": label }, options.map(([v, t]) => h("option", { value: v, selected: current === v }, t)));
   const check = (checked: boolean): HTMLInputElement => h("input", { type: "checkbox", checked });
   const q = h("input", { value: f.q, type: "search", placeholder: "Buscar texto… (usá \"comillas\" para frases, term* para prefijos)", "aria-label": "Buscar" });
-  const author = select("Autor", f.author_id, [["", "Todos"], ...state.authors.map((a) => [String(a.id), `${a.label} (${n(a.messages)})`] as const)]);
+  const author = select("Autor", f.author_id, [["", "Todos"], ...authors.map((a) => [String(a.id), `${a.label} (${n(a.messages)})`] as const)]);
   const category = select("Categoría", f.category, [["", "Todas"], ...categories().map((c) => [c.key, c.label] as const)]);
   const rtype = select("Tipo de registro", f.record_type, [["message", "Mensajes de participantes"], ["system", "Avisos del sistema"], ["unrecognized", "No reconocidos"], ["all", "Todos los registros"]]);
   const order = select("Orden", f.order, [["recent", "Más recientes"], ["oldest", "Más antiguos"], ["relevance", "Relevancia"]]);
