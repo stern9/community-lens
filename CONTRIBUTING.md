@@ -57,4 +57,4 @@ No hace falta que el cambio sea perfecto para abrirlo: un borrador (*draft*) sir
 
 ## Licencia
 
-El repositorio todavía no tiene una licencia de uso. Hasta que la tenga, consultá antes de reutilizar el código.
+El proyecto usa la [licencia MIT](LICENSE). Al contribuir aceptás que tu aporte se publique bajo esa misma licencia.
