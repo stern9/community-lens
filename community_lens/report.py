@@ -5,7 +5,7 @@ autor solo se incluyen si se pide explícitamente.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html import escape
 
 from . import dates, search, stats
@@ -35,7 +35,7 @@ def build(con, chat_id: int, d_from=None, d_to=None, run_id=None, include_author
     cats = search.category_summary(con, chat_id, d_from, d_to, run_id)
     au = stats.authors(con, chat_id, d_from, d_to)["authors"][:10] if include_authors else None
     return {"stats": s, "categories": cats, "authors": au,
-            "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
+            "generated_at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")}
 
 
 def _metric_rows(s: dict) -> list[tuple[str, str, str]]:

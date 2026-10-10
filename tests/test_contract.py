@@ -10,10 +10,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import fixture_bytes
 from fastapi.testclient import TestClient
 from jsonschema import Draft7Validator
-
-from conftest import fixture_bytes
 
 ROOT = Path(__file__).parent.parent
 SCHEMA = json.loads((ROOT / "web" / "src" / "api-schema.json").read_text(encoding="utf-8"))
@@ -158,8 +157,8 @@ def test_responses_match_typescript_types(client):
     check("ApiErrorBody", low.json())
 
     # Recursos con documentos versionados (el fixture de terceros trae <document omitted>)
-    docs = ("[6/1/26, 9:00:00 AM] +506 5555 0202: <document omitted> Manual-Demo-v1.4.docx\n"
-            "[6/2/26, 9:00:00 AM] +506 5555 0303: <document omitted> Manual-Demo-v1_6.pdf\n").encode()
+    docs = (b"[6/1/26, 9:00:00 AM] +506 5555 0202: <document omitted> Manual-Demo-v1.4.docx\n"
+            b"[6/2/26, 9:00:00 AM] +506 5555 0303: <document omitted> Manual-Demo-v1_6.pdf\n")
     dv = ok(client.post("/api/imports/preview", params={"filename": "docs.txt"}, content=docs))
     dcid = ok(client.post("/api/imports/commit", json={**body, "token": dv["token"], "chat_name": "Docs"}))["chat_id"]
     lib = ok(client.get("/api/resources", params={"chat_id": dcid}))
@@ -197,7 +196,7 @@ def test_jev_run_and_provider_info_match_types(client, monkeypatch):
 def test_typescript_compiles_and_committed_build_is_current(tmp_path):
     """Chequeo estricto de tipos, y web/dist + api-schema.json al día con web/src."""
     tsc = str(ROOT / "node_modules" / ".bin" / "tsc")
-    r = subprocess.run([tsc, "-p", "tsconfig.json", "--outDir", str(tmp_path / "dist")], cwd=ROOT, capture_output=True, text=True)
+    r = subprocess.run([tsc, "-p", "tsconfig.json", "--outDir", str(tmp_path / "dist")], cwd=ROOT, capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stdout + r.stderr
     names = lambda d: sorted(str(p.relative_to(d)) for p in d.rglob("*.js"))
     built = names(tmp_path / "dist")
@@ -208,6 +207,6 @@ def test_typescript_compiles_and_committed_build_is_current(tmp_path):
     if gen.exists() and shutil.which("node"):
         out = tmp_path / "schema.json"
         r = subprocess.run([str(gen), "--path", "web/src/types.ts", "--tsconfig", "tsconfig.json", "--type", "*", "--no-type-check", "-o", str(out)],
-                           cwd=ROOT, capture_output=True, text=True)
+                           cwd=ROOT, capture_output=True, text=True, check=False)
         assert r.returncode == 0, r.stdout + r.stderr
         assert json.loads(out.read_text()) == SCHEMA, "web/src/api-schema.json está desactualizado: corré `npm run schema`"

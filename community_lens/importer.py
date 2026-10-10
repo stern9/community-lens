@@ -22,7 +22,7 @@ import json
 import re
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -41,20 +41,20 @@ class ImportError_(Exception):
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def get_tz(name: str) -> ZoneInfo:
     try:
         return ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError, KeyError):
-        raise ImportError_("bad_timezone", f"Zona horaria no reconocida: {name}")
+        raise ImportError_("bad_timezone", f"Zona horaria no reconocida: {name}") from None
 
 
 def to_utc(naive: datetime, tz: ZoneInfo) -> datetime:
     # Horas inexistentes/ambiguas por cambio de horario usan la primera
     # ocurrencia (fold=0); se documenta como limitación.
-    return naive.replace(tzinfo=tz).astimezone(timezone.utc)
+    return naive.replace(tzinfo=tz).astimezone(UTC)
 
 
 def fmt_utc(dt: datetime) -> str:
@@ -190,7 +190,7 @@ def _overlap(con, chat_id: int, recs, tz, has_seconds: bool) -> dict:
     ex_keys = Counter(_keys_for(existing[i0:i1], minute))
     e_lo, e_hi = existing[0]["ts_utc"], existing[-1]["ts_utc"]
     matched = new_in = 0
-    for r, u in zip(recs, utcs):
+    for r, u in zip(recs, utcs, strict=True):
         if e_lo <= fmt_utc(u) <= e_hi:
             new_in += 1
             k = match_key(u, r.author_raw, r.text, minute)
@@ -207,7 +207,7 @@ def preview(con, data: bytes, file_name: str, tz_name: str | None, date_order: s
     clear_staging(older_than_seconds=3600)
     sha = stage(data)
     text, dec_warn = decode(data)
-    raws, issues, _ = P.scan(text)
+    raws, _issues, _ = P.scan(text)
     if not raws:
         unstage(sha)
         raise ImportError_("no_records", "No se reconoció ningún registro con fecha. ¿Es una exportación TXT de WhatsApp?")
@@ -326,8 +326,8 @@ def commit(con, token: str, file_name: str, *, chat_id: int | None, chat_name: s
 
         minute = _chat_minute_precision(con, chat_id, parsed["has_seconds"]) if existing else not parsed["has_seconds"]
         utcs = [to_utc(r.ts, tz) for r in recs]
-        new_keys = [match_key(u, r.author_raw, r.text, minute) for r, u in zip(recs, utcs)]
-        stored_keys = [match_key(u, r.author_raw, r.text, False) for r, u in zip(recs, utcs)]
+        new_keys = [match_key(u, r.author_raw, r.text, minute) for r, u in zip(recs, utcs, strict=True)]
+        stored_keys = [match_key(u, r.author_raw, r.text, False) for r, u in zip(recs, utcs, strict=True)]
 
         import_id = con.execute(
             """INSERT INTO imports(chat_id, file_name, file_sha256, file_bytes, imported_at, date_order,

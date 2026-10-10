@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..config import settings
 from . import labels
@@ -31,7 +31,7 @@ def close_stale_runs(con) -> int:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _items(con, chat_id: int, d_from, d_to, n_context: int, limit: int | None) -> tuple[list[Item], int]:

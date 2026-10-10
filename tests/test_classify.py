@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from conftest import do_import
 
 from community_lens import classify, search
 from community_lens.classify import jev, labels
@@ -8,7 +9,6 @@ from community_lens.classify.base import ContextMessage, Item, Provider, Provide
 from community_lens.classify.rules import RulesProvider
 from community_lens.classify.taxonomy import CATEGORY_KEYS, TAXONOMY_VERSION
 from community_lens.config import settings
-from conftest import do_import
 
 
 def cats(text, **kw):
@@ -245,6 +245,7 @@ def test_unexpected_failure_never_leaves_a_run_in_progress(con):
 
 def test_runs_left_in_progress_by_a_dead_process_are_closed_on_startup(con):
     from fastapi.testclient import TestClient
+
     from community_lens.api import app
     cid = do_import(con, "overlap_a.txt")["chat_id"]
     con.execute("""INSERT INTO analysis_runs(chat_id, provider, model, taxonomy_version, config, started_at, status)

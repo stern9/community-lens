@@ -1,0 +1,26 @@
+# Solo configuración de herramientas. La app no se instala como paquete: requirements.txt sigue siendo la fuente
+# de las dependencias y ./run.sh no necesita este archivo.
+[tool.ruff]
+target-version = "py311"
+line-length = 160            # el repo usa líneas largas a propósito y no se formatea; E501 no está activo
+extend-exclude = ["web", "docs"]
+
+[tool.ruff.lint]
+extend-select = ["E4", "E7", "E9", "F", "I", "UP", "B", "S110", "S112", "BLE", "RUF"]
+ignore = [
+  "FURB167",                     # re.I / re.S como alias
+  "E702", "E731", "E741",        # `a; b`, lambdas asignadas y nombres cortos: estilo del repo
+  "RUF001", "RUF002", "RUF003",  # caracteres "ambiguos": el texto está en español y el parser trata marcas de WhatsApp
+  "RUF012",                      # atributos de clase mutables sin ClassVar
+  "RUF005",                      # `a + [b]` en vez de `[*a, b]`
+  "ISC004",                      # cadenas contiguas en varias líneas: se usan a propósito en textos largos
+]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Header", "fastapi.Body", "fastapi.File", "fastapi.Form", "fastapi.Path"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["community_lens"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

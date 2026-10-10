@@ -17,7 +17,7 @@ import re
 import socket
 import ssl
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from email.message import Message
 from html.parser import HTMLParser
 from pathlib import Path
@@ -203,7 +203,7 @@ def extract(raw: str) -> tuple[str, str]:
     p = _Text()
     try:
         p.feed(raw)
-    except Exception:  # HTML roto: se usa lo que alcanzó a leer
+    except Exception:  # noqa: BLE001, S110  HTML roto: se usa lo que alcanzó a leer
         pass
     body = re.sub(r"[ \t\r\f\v]+", " ", "".join(p.chunks))
     body = re.sub(r"\s*\n\s*", "\n", body).strip()
@@ -352,7 +352,7 @@ def _Text_meta(page: str, key: str) -> str:
     p = _Text()
     try:
         p.feed(page)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110  HTML roto: se usa lo que alcanzó a leer
         pass
     return p.meta.get(key, "")
 
@@ -370,7 +370,7 @@ def read_page(item: dict, net: Net | None = None) -> dict:
         return {"url": item["url"], "kind": item["kind"], "status": "ok", "title": title, "text": text, "reason": None}
     except NewspaperError as err:
         return {"url": item["url"], "kind": item["kind"], "status": "failed", "title": "", "text": "", "reason": str(err)}
-    except Exception:  # una página rara no debe tumbar la edición
+    except Exception:  # noqa: BLE001  una página rara no debe tumbar la edición
         return {"url": item["url"], "kind": item["kind"], "status": "failed", "title": "", "text": "", "reason": "no se pudo leer"}
 
 
@@ -393,7 +393,7 @@ def load_pages(con, items: list[dict], net: Net | None = None, refresh: bool = F
     todo = [i for i in items if i["url"] not in have]
     with ThreadPoolExecutor(max_workers=6) as pool:
         fresh = list(pool.map(lambda i: read_page(i, net), todo))
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     for p in fresh:
         con.execute("""INSERT INTO pages(url, kind, status, title, text, reason, fetched_at) VALUES (?,?,?,?,?,?,?)
                        ON CONFLICT(url) DO UPDATE SET kind=excluded.kind, status=excluded.status, title=excluded.title,

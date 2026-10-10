@@ -1,5 +1,6 @@
-from community_lens import report, search, stats
 from conftest import do_import
+
+from community_lens import report, search, stats
 
 
 def test_totals_and_denominators(con):

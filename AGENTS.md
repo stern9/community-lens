@@ -33,9 +33,10 @@ lo pida. No propongás lo que ya está decidido (ver al final).
   ```
   Las variables exportadas ganan sobre `.env` (`config.py`). `CL_DB_PATH` también mueve `staging/`, que la app
   vacía al arrancar: con la base real, arrancar otra instancia borra vistas previas de importación en curso.
-- No hagás `git commit` ni `git push`: los hace el dueño. Dejá el cambio en el árbol de trabajo y pasale el
-  comando con el mensaje propuesto: una línea corta con prefijo de tipo (`feature:`, `fix:`, `chore:`),
-  sin líneas de co-autoría.
+- No hagás `git commit` ni `git push`: los hace el dueño. Trabajá en una rama, nunca sobre `main`
+  (`fix/…`, `feature/…` o `chore/…`, con un nombre corto), dejá el cambio en el árbol de trabajo y pasale el
+  comando con el mensaje propuesto: una línea corta con prefijo de tipo (`feature:`, `fix:`, `chore:`), sin
+  líneas de co-autoría. Los cambios llegan a `main` por pull request, con las pruebas de CI en verde.
 - No agregués dependencias (Python ni npm) sin preguntar: la app corre sin Node y sin internet, y cada
   dependencia es algo que el usuario instala en su máquina.
 - No borrés ni renombrés columnas ni tablas. No hay migraciones: `db.py` crea lo que falta al conectar y existe
@@ -64,9 +65,12 @@ lo pida. No propongás lo que ya está decidido (ver al final).
 
 ```bash
 .venv/bin/pip install -r requirements-dev.txt   # una vez
-.venv/bin/python -m pytest -q                   # sin red, base temporal por prueba, no lee tu .env
-npm install && npm run check                    # solo si tocaste web/src/: regenera api-schema.json y web/dist
+./scripts/check.sh                              # lo mismo que corre CI: linter, frontend y pruebas
 ```
+
+Por separado: `.venv/bin/ruff check .` (linter; no se formatea el código, las líneas largas son a propósito),
+`.venv/bin/python -m pytest -q` (sin red, base temporal por prueba, no lee tu `.env`) y `npm install && npm run check`
+(solo si tocaste `web/src/`: regenera `api-schema.json` y `web/dist`). Un `# noqa` lleva al lado su razón.
 
 `web/dist/` va versionado para que la app corra sin Node, y `web/src/api-schema.json` se genera desde
 `types.ts`: si cambiás el frontend o una respuesta de la API y no corrés `npm run check`, `tests/test_contract.py`

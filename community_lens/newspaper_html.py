@@ -77,7 +77,7 @@ def render(d: Edition) -> str:
     facts_line = (f"Calculado sobre el chat: {f['messages']} mensajes de {f['participants']} participantes del {e(d['range_label'])}"
                   f"{busiest}.")
     facts_box = f'<section class="fp-box"><h2>En números</h2><p class="fp-facts">{facts_line}</p></section>'
-    lead_html = (f'<section class="fp-lead-grid" id="articulos"><article>'
+    lead_html = ('<section class="fp-lead-grid" id="articulos"><article>'
                  + (f'<p class="fp-kicker">{e(lead["kicker"])}</p>' if lead["kicker"] else "")
                  + f'<h2 class="fp-lead-h">{_link(lead["url"], lead["headline"])}</h2>{_meta(lead, " · ")}'
                  + '<div class="fp-lead-body">' + "".join(f"<p>{e(s)}</p>" for s in lead["summary"]) + "</div>"

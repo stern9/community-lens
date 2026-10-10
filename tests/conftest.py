@@ -1,7 +1,6 @@
 import io
 import ipaddress
 import json
-import os
 import urllib.error
 from email.message import Message
 from pathlib import Path

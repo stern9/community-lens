@@ -3,9 +3,8 @@ import re
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
-
 from conftest import fixture_bytes
+from fastapi.testclient import TestClient
 
 WEB = Path(__file__).parent.parent / "web"
 

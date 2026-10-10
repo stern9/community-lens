@@ -1,0 +1,16 @@
+## Qué cambia y por qué
+
+<!-- Una o dos oraciones. Si resuelve un issue: "Cierra #123". -->
+
+## Cómo lo verifiqué
+
+<!-- Qué corriste y qué viste. Distinguí lo que reprodujiste de lo que solo leíste en el código. -->
+
+## Antes de pedir revisión
+
+- [ ] `./scripts/check.sh` pasa en mi máquina.
+- [ ] El cambio trae su prueba, o explico arriba por qué no aplica.
+- [ ] Si toqué `web/src/`, incluí `web/dist/` y `web/src/api-schema.json` regenerados.
+- [ ] No hay texto de chats reales, nombres, teléfonos ni keys en el código, las pruebas ni esta descripción.
+- [ ] No agregué dependencias, o lo acordamos antes en un issue.
+- [ ] No borré ni renombré columnas o tablas, y lo ya guardado se sigue abriendo.

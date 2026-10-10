@@ -46,7 +46,7 @@ def _serialize(con, rows, runs: dict[int, int | None]) -> list[dict]:
         d["ref"] = f"CL-{r['uid']}"
         d.update(tags[r["id"]])
         d["sources"] = src.get(r["id"], [])
-        if "snippet" in r.keys():
+        if "snippet" in r.keys():  # noqa: SIM118  en sqlite3.Row, `in` busca entre los valores, no entre las columnas
             d["snippet"] = r["snippet"]
         out.append(d)
     return out

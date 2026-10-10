@@ -1,5 +1,6 @@
-from community_lens import resources
 from conftest import do_import
+
+from community_lens import resources
 
 
 def chat_with_docs(con):
@@ -54,7 +55,7 @@ def test_documents_grouping_counts_and_filters(con):
     lib = resources.library(con, cid)
     assert lib["counts"] == {"documents": 3, "document_shares": 7, "unnamed_documents": 0, "links": 1, "link_shares": 2}
     assert [d["title"] for d in lib["items"]] == ["informe", "2606.27334v1", "Manual-Demo"]          # más recientes primero
-    assert [d["title"] for d in resources.library(con, cid, order="shared")["items"]][0] == "Manual-Demo"
+    assert resources.library(con, cid, order="shared")["items"][0]["title"] == "Manual-Demo"
     assert resources.library(con, cid, q="jota informe")["total"] == 1                              # también por quién compartió
     assert resources.library(con, cid, d_to="2026-06-01")["items"][0]["latest"]["version"] == "1.4"  # el período acota qué se conoce
     assert resources.library(con, cid, limit=1, offset=1)["items"][0]["title"] == "2606.27334v1"

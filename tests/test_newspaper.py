@@ -4,11 +4,11 @@ import json
 import re
 
 import pytest
+from conftest import FakeLLM, FakeNet
 from fastapi.testclient import TestClient
+from test_contract import check
 
 from community_lens import llm, newspaper
-from conftest import FakeLLM, FakeNet
-from test_contract import check
 
 CHAT = """[10/1/26, 9:00:00 AM] ~ Ana Demo: Miren esta nota https://example.org/notas/centros-de-datos
 [10/1/26, 9:05:00 AM] +506 5555 0202: Llamen a Ana Demo al +506 5555 0909 o escriban a ana@example.org
@@ -77,13 +77,13 @@ def test_link_kinds():
 
 def test_same_link_with_and_without_tracking_counts_once(con):
     from conftest import do_import
-    chat = """[10/1/26, 9:00:00 AM] ~ Ana Demo: https://example.org/notas/uno?utm_source=boletin
+    chat = b"""[10/1/26, 9:00:00 AM] ~ Ana Demo: https://example.org/notas/uno?utm_source=boletin
 [10/2/26, 9:00:00 AM] ~ Beto Demo: https://www.example.org/notas/uno/
 [10/2/26, 9:30:00 AM] ~ Beto Demo: https://example.org/notas/dos
 [10/3/26, 9:00:00 AM] ~ Ana Demo: https://sitio.example/?utm_source=x&utm_medium=y
 [10/3/26, 9:10:00 AM] ~ Beto Demo: https://sitio.example/
 [10/3/26, 9:20:00 AM] ~ Ana Demo: https://example.org/buscar?utm_source=x&q=datos
-""".encode()
+"""
     cid = do_import(con, None, data=chat, file_name="chat.txt", date_order="MDY")["chat_id"]
     c = newspaper.candidates(con, cid, "2026-10-01", "2026-10-03", order="shared")
     assert c["total"] == {"article": 3, "social": 0, "tool": 1}
@@ -329,9 +329,10 @@ def stored_edition(con, chat_id, data, sent, html="<html>página guardada por un
 
 def test_edition_saved_with_the_previous_format_still_opens_and_publishes(client, tmp_path):
     """tests/fixtures/edition_v1.json es una edición tal como la guardaba la app antes de que el formato tuviera versión."""
+    from conftest import FIX
+
     from community_lens import edition
     from community_lens.db import connect
-    from conftest import FIX
     c, cid = client
     v1 = json.loads((FIX / "edition_v1.json").read_text(encoding="utf-8"))
     assert "format" not in v1["data"]

@@ -11,7 +11,7 @@ Las correcciones son un historial de solo-agregado (human_labels): la predicció
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .taxonomy import CATEGORY_KEYS
 
@@ -160,7 +160,7 @@ def save_correction(con, message_id: int, categories: list[str] | None, note: st
         categories = [c for c in CATEGORY_KEYS if c in categories]
     con.execute("INSERT INTO human_labels(message_id, categories, note, created_at) VALUES (?,?,?,?)",
                 (message_id, json.dumps(categories) if categories is not None else None, (note or "")[:500] or None,
-                 datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")))
+                 datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")))
     return categories
 
 
