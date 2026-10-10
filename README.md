@@ -148,7 +148,7 @@ npm run check    # regenera el esquema de la API y compila; una prueba falla si 
 | [docs/seguridad.md](docs/seguridad.md) | Qué se guarda, qué se registra, cómo se trata el contenido del chat y las páginas enlazadas |
 | [docs/frontend.md](docs/frontend.md) | TypeScript sin framework, contrato de tipos con la API, gráficos |
 | [docs/diagramas/README.md](docs/diagramas/README.md) | Los diagramas de flujo de datos y cómo regenerarlos |
-| [docs/pendiente.md](docs/pendiente.md) | Lo que falta, hasta que pase a issues |
+| [Issues](https://github.com/stern9/community-lens/issues) | Lo que falta por hacer y las decisiones abiertas |
 
 ## Créditos y licencia
 
