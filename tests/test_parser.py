@@ -1,7 +1,8 @@
 from datetime import datetime
 
-from community_lens import parser as P
 from conftest import fixture_bytes
+
+from community_lens import parser as P
 
 
 def load(name, order):

@@ -122,13 +122,14 @@ ellas; tus archivos originales no se tocan. El resto está en [docs/seguridad.md
 ## Desarrollo
 
 ```bash
-.venv/bin/pip install -r requirements-dev.txt
-.venv/bin/python -m pytest -q
+.venv/bin/pip install -r requirements-dev.txt   # una vez
+./scripts/check.sh                              # linter + pruebas (+ frontend si hay node_modules)
 ```
 
 Las pruebas usan solo datos sintéticos (`tests/fixtures/`), una base temporal por prueba y ninguna llamada de red;
-tampoco leen tu `.env`. GitHub Actions las corre en cada push a `main` y en cada pull request
-(`.github/workflows/tests.yml`).
+tampoco leen tu `.env`. GitHub Actions corre el linter y las pruebas (Python 3.11 y 3.12) en cada pull request
+(`.github/workflows/tests.yml`); los cambios entran a `main` por pull request. Cómo proponer uno:
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 Para cambiar el frontend (TypeScript en `web/src/`, compilado a `web/dist/`, que va versionado):
 
@@ -158,3 +159,5 @@ Los gráficos usan [Observable Plot](https://observablehq.com/plot/) y D3 (licen
 Los diagramas están hechos con [Archify](https://github.com/tt-a1i/archify) (licencia MIT).
 
 Este repositorio no tiene licencia de uso por ahora (no hay archivo `LICENSE`): todos los derechos reservados.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

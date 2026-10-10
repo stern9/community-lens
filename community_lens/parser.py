@@ -12,7 +12,7 @@ Principios:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from urllib.parse import urlsplit
 
@@ -128,8 +128,7 @@ def extract_links(text: str) -> list[tuple[str, str]]:
             host = (urlsplit(probe).hostname or "").lower()
         except ValueError:
             host = ""
-        if host.startswith("www."):
-            host = host[4:]
+        host = host.removeprefix("www.")
         if "." not in host:
             continue
         out.append((url, host))

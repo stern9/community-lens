@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import asynccontextmanager
 import re
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
@@ -16,7 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from . import classify, importer, llm, newspaper, report, resources, search, stats
 from .classify import labels
-from .classify.taxonomy import CATEGORY_KEYS, TAXONOMY_VERSION, public as taxonomy_public
+from .classify.taxonomy import CATEGORY_KEYS, TAXONOMY_VERSION
+from .classify.taxonomy import public as taxonomy_public
 from .config import ROOT, settings
 from .db import connect
 
@@ -244,7 +245,7 @@ def merge(author_id: int, body: MergeAuthorRequest, con=Depends(db)):
     try:
         stats.merge_author(con, author_id, body.into)
     except ValueError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, str(e)) from None
     return {"ok": True}
 
 
@@ -287,7 +288,7 @@ def get_context(message_id: int, before: int = 6, after: int = 6, con=Depends(db
     try:
         return search.context(con, message_id, before, after)
     except KeyError:
-        raise HTTPException(404, "Mensaje no encontrado.")
+        raise HTTPException(404, "Mensaje no encontrado.") from None
 
 
 @app.post("/api/messages/{message_id}/labels")
@@ -297,9 +298,9 @@ def set_labels(message_id: int, body: LabelsRequest, con=Depends(db)):
     try:
         cats = labels.save_correction(con, message_id, body.categories, body.note)
     except KeyError:
-        raise HTTPException(404, "Mensaje no encontrado.")
+        raise HTTPException(404, "Mensaje no encontrado.") from None
     except ValueError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, str(e)) from None
     return {"ok": True, "categories": cats}
 
 
@@ -321,7 +322,7 @@ def activate_run(run_id: int, con=Depends(db)):
     try:
         labels.set_active_run(con, r["chat_id"], run_id)
     except KeyError:
-        raise HTTPException(422, "Solo se puede activar una ejecución completada.")
+        raise HTTPException(422, "Solo se puede activar una ejecución completada.") from None
     return {"ok": True, "active_run_id": run_id}
 
 
@@ -332,7 +333,7 @@ def start_run(body: RunStartRequest, con=Depends(db)):
     try:
         res = classify.run(con, body.chat_id, body.provider, d_from, d_to, consent=body.consent)
     except classify.ProviderError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from None
     log.info("clasificación: proveedor=%s mensajes=%s errores=%s", res["provider"], res["classified"], res["errors"])
     return res
 

@@ -1,7 +1,7 @@
 import pytest
+from conftest import FakeNet, do_import, fixture_bytes
 
 from community_lens import importer, stats
-from conftest import FakeNet, do_import, fixture_bytes
 
 
 def count(con, sql="SELECT COUNT(*) FROM messages", *p):
@@ -139,8 +139,8 @@ def test_other_chat_is_not_merged_silently(con):
 
 
 def test_similar_names_are_not_merged(con):
-    data = ("[1/20/26, 10:00:00] Ana Prueba: a\n[1/20/26, 10:01:00] Ana Prueba R.: b\n"
-            "[1/20/26, 10:02:00] ana prueba: c\n").encode()
+    data = (b"[1/20/26, 10:00:00] Ana Prueba: a\n[1/20/26, 10:01:00] Ana Prueba R.: b\n"
+            b"[1/20/26, 10:02:00] ana prueba: c\n")
     r = do_import(con, None, data=data, file_name="n.txt")
     assert stats.compute(con, r["chat_id"])["totals"]["active_authors"] == 3
     ids = [x["id"] for x in con.execute("SELECT id FROM authors ORDER BY id")]

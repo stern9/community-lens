@@ -17,7 +17,7 @@ lo que tenían; no se borra nada).
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TypedDict
 
 from . import dates
@@ -175,7 +175,7 @@ def upgrade_sent(s: dict) -> Sent:
 def save(con, chat_id: int, ed: Edition, sent: Sent) -> int:
     return con.execute("""INSERT INTO editions(chat_id, date_from, date_to, created_at, editor, sent, data, html)
                           VALUES (?,?,?,?,?,?,?,'')""",
-                       (chat_id, ed["from"], ed["to"], datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                       (chat_id, ed["from"], ed["to"], datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
                         json.dumps(ed["editor"]), json.dumps(sent), json.dumps(ed, ensure_ascii=False))).lastrowid
 
 

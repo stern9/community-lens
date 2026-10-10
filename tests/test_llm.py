@@ -5,9 +5,9 @@ import json
 import urllib.error
 
 import pytest
+from conftest import FakeLLM
 
 from community_lens import llm
-from conftest import FakeLLM
 
 KEY = "sk-clave-secreta-123"
 PROVIDERS = {
@@ -24,7 +24,7 @@ def ask(name, answer):
 
 def test_anthropic_request():
     data, t = ask("anthropic", '{"hilo": "x"}')
-    (name, url, headers, body), = t.requests
+    (_name, url, headers, body), = t.requests
     assert data == {"hilo": "x"} and url.startswith("https://api.anthropic.com/v1/messages")
     assert headers["x-api-key"] == KEY and "server-side-fallback-2026-07-01" in headers["anthropic-beta"]
     assert body == {"model": "claude-demo", "max_tokens": llm.MAX_OUTPUT_TOKENS, "fallbacks": "default", "system": "Sos el editor.",
@@ -33,7 +33,7 @@ def test_anthropic_request():
 
 def test_openai_request_uses_the_configured_base_url():
     data, t = ask("openai", '{"hilo": "x"}')
-    (name, url, headers, body), = t.requests
+    (_name, url, headers, body), = t.requests
     assert data == {"hilo": "x"} and url == "https://api.openai.example/v1/chat/completions"
     assert headers["authorization"] == f"Bearer {KEY}" and headers["content-type"] == "application/json"
     assert body == {"model": "gpt-demo", "messages": [{"role": "system", "content": "Sos el editor."},
@@ -42,7 +42,7 @@ def test_openai_request_uses_the_configured_base_url():
 
 def test_gemini_request_keeps_the_key_out_of_the_url():
     data, t = ask("gemini", '{"hilo": "x"}')
-    (name, url, headers, body), = t.requests
+    (_name, url, headers, body), = t.requests
     assert data == {"hilo": "x"} and url == "https://generativelanguage.googleapis.com/v1beta/models/gemini-demo:generateContent"
     assert headers["x-goog-api-key"] == KEY and KEY not in url
     assert body == {"systemInstruction": {"parts": [{"text": "Sos el editor."}]},
@@ -111,7 +111,7 @@ def test_connection_failures(name, error):
     ("gemini", b'{"promptFeedback": {"blockReason": "OTHER"}}'),
 ])
 def test_malformed_responses_are_errors_not_crashes(name, body):
-    with pytest.raises(llm.LLMError, match="forma esperada|respuesta no fue válida"):
+    with pytest.raises(llm.LLMError, match=r"forma esperada|respuesta no fue válida"):
         llm.complete(PROVIDERS[name], "s", "u", Broken(body=body))
 
 

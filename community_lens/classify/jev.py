@@ -119,9 +119,9 @@ class JevProvider(Provider):
                     continue
                 # Solo el código: el cuerpo del error podría repetir texto enviado.
                 raise ProviderError({401: "Jev rechazó la clave (401).", 422: "Jev rechazó la solicitud (422)."}
-                                    .get(e.code, f"Jev respondió HTTP {e.code}."))
+                                    .get(e.code, f"Jev respondió HTTP {e.code}.")) from None
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
-                raise ProviderError(f"No se pudo completar la llamada a Jev ({type(e).__name__}).")
+                raise ProviderError(f"No se pudo completar la llamada a Jev ({type(e).__name__}).") from None
         raise ProviderError("Jev no respondió tras varios intentos.")
 
     def classify_one(self, it: Item) -> Result:

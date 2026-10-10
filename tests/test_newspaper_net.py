@@ -1,8 +1,8 @@
 """Descarga de páginas para el periódico. Sin red: solo se reemplaza quién resuelve nombres y quién abre la conexión."""
 import pytest
+from conftest import FakeNet
 
 from community_lens import newspaper
-from conftest import FakeNet
 
 HTML = {"Content-Type": "text/html; charset=utf-8"}
 
