@@ -422,7 +422,7 @@ def transcript(con, chat_id: int, d_from: str, d_to: str) -> list[dict]:
     name_re = re.compile("|".join(re.escape(n) for n in sorted(names, key=len, reverse=True)), re.I) if names else None
 
     def scrub(t: str) -> str:
-        t = re.sub(r"@⁨[^⁩]*⁩", "@alguien", t)
+        t = re.sub(r"@\u2068[^\u2069]*\u2069", "@alguien", t)
         t = re.sub(r"@\+?\d[\d\s-]{6,}\d", "@alguien", t)
         t = re.sub(r"(?<![\w/.=-])\+?\d[\d\s().-]{7,}\d(?![\w/])", "[número]", t)
         t = re.sub(r"[\w.+-]+@[\w-]+\.[\w.-]+", "[correo]", t)

@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 # Marcas direccionales/invisibles que WhatsApp inserta. ‍ (ZWJ) se conserva
 # porque forma parte de emojis compuestos.
-_MARKS = "‎‏﻿‪‫‬⁦⁧⁨⁩​"
+_MARKS = "\u200e\u200f\ufeff\u202a\u202b\u202c\u2066\u2067\u2068\u2069\u200b"
 _MARKS_RE = re.compile(f"[{_MARKS}]")
 _SP = r"[   ]"
 
@@ -39,12 +39,12 @@ _OMIT = r"omitted|omitida|omitido"
 # Solo cuenta como marcador si viene con evidencia estructural: precedido por
 # U+200E, envuelto en <...>, o si es el cuerpo completo del mensaje.
 _MEDIA_MARKED_RE = re.compile(
-    rf"(?:‎\s*({_MEDIA_WORDS})\s+(?:{_OMIT}))|(?:<({_MEDIA_WORDS})\s+(?:{_OMIT})>)", re.I
+    rf"(?:\u200e\s*({_MEDIA_WORDS})\s+(?:{_OMIT}))|(?:<({_MEDIA_WORDS})\s+(?:{_OMIT})>)", re.I
 )
 _MEDIA_WHOLE_RE = re.compile(rf"^({_MEDIA_WORDS})\s+(?:{_OMIT})$", re.I)
 _ATTACHED_RE = re.compile(r"<(?:attached|adjunto):\s*([^>]{1,200})>", re.I)
-_DOC_META_RE = re.compile(r"\s*•\s*‎?\d+\s+(?:pages?|páginas?)\s*$", re.I)
-_EDITED_RE = re.compile(r"‎?<(?:This message was edited|Se editó este mensaje\.?)>", re.I)
+_DOC_META_RE = re.compile(r"\s*•\s*\u200e?\d+\s+(?:pages?|páginas?)\s*$", re.I)
+_EDITED_RE = re.compile(r"\u200e?<(?:This message was edited|Se editó este mensaje\.?)>", re.I)
 _DELETED_RE = re.compile(
     r"^(?:This message was deleted(?: by admin .*?)?\.?|You deleted this message\.?|"
     r"Se eliminó este mensaje\.?|Eliminaste este mensaje\.?|Este mensaje fue eliminado\.?)$",
@@ -81,7 +81,7 @@ _GROUP_AUTHOR_HINT = re.compile(
     r"end-to-end encrypted|cifrad[oa]s? de extremo a extremo|Welcome to the group|Te damos la bienvenida", re.I)
 
 _WS_RE = re.compile(r"\s+")
-_URL_RE = re.compile(r"(?:https?://|www\.)[^\s<>\"'‎]+", re.I)
+_URL_RE = re.compile(r"(?:https?://|www\.)[^\s<>\"'\u200e]+", re.I)
 _PHONE_RE = re.compile(r"^\+?[\d\s\-() ‑.]{7,}$")
 _SELF_LABELS = {"you", "tú", "tu", "usted", "yo"}
 
@@ -339,7 +339,7 @@ def parse(text: str, date_order: str) -> dict:
         text_full = "\n".join([body] + r.extra)
         cleaned = strip_marks(text_full).strip()
         cleaned_first = strip_marks(body).strip()
-        lrm_start = body.startswith("‎")
+        lrm_start = body.startswith("\u200e")
 
         rec = ParsedRecord(
             line_start=r.line_start, line_end=r.line_end, ts=ts, raw_ts=r.raw_ts,

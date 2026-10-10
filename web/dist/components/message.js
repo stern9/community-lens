@@ -18,7 +18,7 @@ function snippetNodes(snippet) {
     return out;
 }
 function reference(m) {
-    const quote = m.text.replace(/[‎‏‪-‬⁦-⁩]/g, "").trim();
+    const quote = m.text.replace(/[\u200e\u200f\u202a-\u202c\u2066-\u2069]/g, "").trim();
     const src = m.sources[0];
     const lines = src ? ` · ${src.file_name}, línea${src.line_end > src.line_start ? "s" : ""} ${src.line_start}${src.line_end > src.line_start ? "–" + src.line_end : ""}` : "";
     return `«${quote.length > 400 ? quote.slice(0, 400) + "…" : quote}»\n— ${m.author_label ?? "Aviso del sistema"}, ${m.chat_name}, ${m.ts_local.slice(0, 16)}` +
