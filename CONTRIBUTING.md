@@ -19,8 +19,8 @@ Revisá primero si ya hay un [issue](../../issues) sobre lo mismo. Si no, contá
 - sistema operativo, versión de Python y, si el archivo viene de WhatsApp, si se exportó desde iOS o Android y
   con o sin archivos.
 
-Un problema de seguridad o de privacidad no va en un issue público: escribile directamente a quien mantiene el
-repositorio.
+Un problema de seguridad o de privacidad no va en un issue público: reportalo en privado como indica
+[SECURITY.md](SECURITY.md).
 
 ## Proponer una idea
 
