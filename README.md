@@ -159,3 +159,5 @@ Los gráficos usan [Observable Plot](https://observablehq.com/plot/) y D3 (licen
 Los diagramas están hechos con [Archify](https://github.com/tt-a1i/archify) (licencia MIT).
 
 Este repositorio no tiene licencia de uso por ahora (no hay archivo `LICENSE`): todos los derechos reservados.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
