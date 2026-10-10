@@ -158,6 +158,7 @@ El formato de periódico y la idea de que un modelo lea las páginas y arme la p
 Los gráficos usan [Observable Plot](https://observablehq.com/plot/) y D3 (licencia ISC), copiados en `web/vendor/`.
 Los diagramas están hechos con [Archify](https://github.com/tt-a1i/archify) (licencia MIT).
 
-Este repositorio no tiene licencia de uso por ahora (no hay archivo `LICENSE`): todos los derechos reservados.
+Community Lens se publica bajo la [licencia MIT](LICENSE). Las librerías copiadas en `web/vendor/` conservan la suya
+(ver [web/vendor/README.md](web/vendor/README.md)).
 
 [@stern9](https://github.com/stern9): 🤖 Generated with [Claude Code](https://claude.com/claude-code) · ☀️ Y Sol contraataca, desde [Codex](https://openai.com/codex/).
