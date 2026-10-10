@@ -53,6 +53,9 @@ Principios que atraviesan el código:
 | `editions` | Ediciones del periódico: rango, quién redactó, qué se envió y el contenido estructurado (`data`, ver periodico.md) |
 
 No hay sistema de migraciones: `db.py` crea lo que falte al conectar y los cambios de esquema son aditivos.
+Al abrir una base anterior, también normaliza las claves de la caché `pages` con `resources.link_key`: mueve cada
+URL antigua a su clave, o elimina la fila duplicada si esa clave ya existe, conservando la fila normalizada.
+Es idempotente y no modifica los enlaces del chat ni las ediciones guardadas.
 Dos columnas quedaron de versiones anteriores y se conservan sin uso: `editions.html` y, para comparar,
 `messages.match_key` (la clave de reconciliación se recalcula al importar; ver abajo).
 

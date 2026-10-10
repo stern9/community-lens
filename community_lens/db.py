@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from .config import settings
+from .resources import link_key
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS chats (
@@ -190,4 +191,23 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     # Migración: ejecución de clasificación vigente por chat (NULL = la más reciente).
     if "active_run_id" not in {r["name"] for r in con.execute("PRAGMA table_info(chats)")}:
         con.execute("ALTER TABLE chats ADD COLUMN active_run_id INTEGER")
+    _normalize_pages(con)
     return con
+
+
+def _normalize_pages(con: sqlite3.Connection) -> None:
+    """Unifica la caché de bases anteriores bajo link_key; si ya existe la clave, conserva esa fila.
+    Solo toca páginas derivadas, no los enlaces compartidos ni las ediciones. Repetirlo no cambia nada."""
+    aliases = [(r["url"], link_key(r["url"])) for r in con.execute("SELECT url FROM pages")]
+    aliases = [(url, key) for url, key in aliases if url != key]
+    if not aliases:
+        return
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        for url, key in aliases:
+            con.execute("UPDATE OR IGNORE pages SET url=? WHERE url=?", (key, url))
+            con.execute("DELETE FROM pages WHERE url=?", (url,))
+        con.execute("COMMIT")
+    except sqlite3.Error:
+        con.execute("ROLLBACK")
+        raise

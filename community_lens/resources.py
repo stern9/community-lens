@@ -38,7 +38,7 @@ def clean_url(url: str) -> str:
 
 def link_key(url: str) -> str:
     """Identidad de un enlace: dos URLs con la misma clave son el mismo enlace.
-    No distingue mayúsculas en el dominio, prefijos www./m./mobile., barra final ni parámetros utm_*.
+    No distingue mayúsculas en el dominio, prefijos www./m./mobile., puerto por defecto, barra final ni parámetros utm_*.
     Es una clave para agrupar, no una dirección: no se abre ni se muestra."""
     try:
         parts = urlsplit(url if "://" in url else "//" + url)
@@ -48,6 +48,8 @@ def link_key(url: str) -> str:
     for prefix in _HOST_PREFIXES:
         if host.startswith(prefix) and "." in host[len(prefix):]:
             host = host[len(prefix):]
+    if (parts.scheme.lower(), port) in (("https", 443), ("http", 80)):
+        port = None
     query = _without_tracking(parts.query)
     return ((parts.scheme.lower() + "://" if parts.scheme else "") + host + (f":{port}" if port else "") + parts.path.rstrip("/")
             + ("?" + query if query else "") + ("#" + parts.fragment if parts.fragment else ""))
