@@ -126,6 +126,11 @@ ellas; tus archivos originales no se tocan. El resto está en [docs/seguridad.md
 ./scripts/check.sh                              # linter + pruebas (+ frontend si hay node_modules)
 ```
 
+Las dependencias de Python van con versión exacta en `requirements.txt` y `requirements-dev.txt`, que se generan
+desde `requirements.in` y `requirements-dev.in`. Para agregar o actualizar una, editá el `.in` y regenerá con
+[pip-tools](https://pip-tools.readthedocs.io/) (`pip-compile --strip-extras requirements.in` y lo mismo con
+`requirements-dev.in`); Dependabot propone las actualizaciones una vez al mes.
+
 Las pruebas usan solo datos sintéticos (`tests/fixtures/`), una base temporal por prueba y ninguna llamada de red;
 tampoco leen tu `.env`. GitHub Actions corre el linter y las pruebas (Python 3.11 y 3.12) en cada pull request
 (`.github/workflows/tests.yml`); los cambios entran a `main` por pull request. Cómo proponer uno:
