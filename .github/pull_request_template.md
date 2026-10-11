@@ -1,6 +1,6 @@
 ## Qué cambia y por qué
 
-<!-- Una o dos oraciones. Si resuelve un issue: "Cierra #123". -->
+<!-- Una o dos oraciones. Si resuelve un issue, escribí "Closes #123" (en inglés: GitHub solo cierra el issue con esa palabra). -->
 
 ## Cómo lo verifiqué
 
