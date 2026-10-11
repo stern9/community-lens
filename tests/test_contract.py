@@ -10,8 +10,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import fixture_bytes
-from fastapi.testclient import TestClient
+from conftest import api_client, fixture_bytes
 from jsonschema import Draft7Validator
 
 ROOT = Path(__file__).parent.parent
@@ -28,8 +27,7 @@ def check(type_name: str, data, *, array: bool = False) -> None:
 
 @pytest.fixture
 def client():
-    from community_lens.api import app
-    with TestClient(app) as c:
+    with api_client() as c:
         yield c
 
 

@@ -43,6 +43,19 @@ def con():
     c.close()
 
 
+# La dirección por defecto de la app. Los clientes de prueba hablan con ella (y no con el "testserver" que
+# usa TestClient si no se le dice nada) porque la app rechaza cualquier Host que no sea el suyo.
+BASE_URL = "http://{}:{}".format(config.ENV["host"][1], config.ENV["port"][1])
+
+
+def api_client(**kw):
+    """El único lugar donde se arma el cliente HTTP de las pruebas."""
+    from fastapi.testclient import TestClient
+
+    from community_lens.api import app
+    return TestClient(app, base_url=BASE_URL, **kw)
+
+
 def fixture_bytes(name: str) -> bytes:
     return (FIX / name).read_bytes()
 

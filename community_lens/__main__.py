@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(1) from None
     s = settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    if s.host not in ("127.0.0.1", "localhost", "::1"):
+    if not s.loopback:
         logging.getLogger("community_lens").warning(
             "CL_HOST=%s expone la app fuera de esta máquina. No hay autenticación.", s.host)
     print(f"\n  Community Lens → http://{s.host}:{s.port}\n", flush=True)

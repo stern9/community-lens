@@ -1,6 +1,7 @@
 """API HTTP local (FastAPI) y entrega del frontend estático."""
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import re
@@ -119,9 +120,89 @@ def _chat(con, chat_id: int):
     return c
 
 
+# ------------------------------------------------ de dónde viene la solicitud --
+# La app no tiene autenticación: confía en que solo le habla quien está en esta máquina. Pero el navegador de
+# esa persona también corre páginas de otros, así que antes de atender nada se comprueban dos cosas:
+#
+# 1. Host: la solicitud tiene que estar dirigida a una dirección de esta instancia. Si no, una página ajena cuyo
+#    nombre pasa a resolver a 127.0.0.1 ("DNS rebinding") sería, para el navegador, el mismo origen que la app
+#    y podría leer toda la API. Vale para cualquier método y cualquier ruta, archivos estáticos incluidos.
+# 2. Origin y Sec-Fetch-Site: una solicitud que modifica no puede declarar que viene de otro sitio. Aquí el Host
+#    es el correcto (la página ajena le habla a la dirección real), y lo que la delata es lo que agrega el navegador.
+#
+# No se consulta X-Forwarded-Host ni ningún otro encabezado de proxy, ni request.url (que Starlette arma con ellos).
+
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")  # no modifican nada; todo otro método pasa por la comprobación 2
+_HOSTNAME = re.compile(r"[a-z0-9]([a-z0-9.-]*[a-z0-9])?")  # sin comodines, sin puerto, sin punto final
+
+
+def _is_ip(host: str) -> bool:
+    """Una dirección IP escrita tal cual, como va en Host: IPv4, o IPv6 entre corchetes y sin zona."""
+    try:
+        if host.startswith("["):
+            return host.endswith("]") and "%" not in host and ipaddress.ip_address(host[1:-1]).version == 6
+        return ipaddress.ip_address(host).version == 4
+    except ValueError:
+        return False
+
+
+def _own_host(value: str) -> str | None:
+    """El host (en minúsculas, sin puerto) si `value` es un Host de esta instancia; None si no.
+    La comparación es exacta: un nombre que contiene o termina en uno permitido no es uno permitido."""
+    s = settings()
+    value = value.lower()
+    if not value.isascii():
+        return None
+    if value.startswith("["):  # IPv6: los dos puntos de adentro de los corchetes no separan el puerto
+        end = value.find("]")
+        host, rest = value[:end + 1], value[end + 1:]
+        if end < 0 or (rest and not rest.startswith(":")):
+            return None
+        port = rest[1:] if rest else None
+    else:
+        host, sep, port = value.partition(":")
+        port = port if sep else None
+    # El puerto es siempre el configurado. Sin puerto, el navegador habla con el 80.
+    if port != str(s.port) and not (port is None and s.port == 80):
+        return None
+    if host in ("localhost", "127.0.0.1", "[::1]"):
+        return host
+    # Además: CL_HOST si es un nombre o una IPv4, y los nombres que el dueño listó en CL_ALLOWED_HOSTS.
+    if host in {n for n in (c.strip().lower() for c in (s.host, *s.allowed_hosts.split(","))) if _HOSTNAME.fullmatch(n)}:
+        return host
+    # Con CL_HOST fuera de loopback no se sabe por qué dirección va a entrar el dueño (con 0.0.0.0, cualquiera de
+    # la máquina). Se acepta una IP escrita tal cual: cambiar el DNS solo sirve con un nombre, y un nombre no pasa.
+    if not s.loopback and _is_ip(host):
+        return host
+    return None
+
+
+def _refusal(request: Request) -> JSONResponse | None:
+    """La respuesta de rechazo si la solicitud no está dirigida a esta instancia o viene de otro sitio."""
+    hosts = request.headers.getlist("host")
+    host = _own_host(hosts[0]) if len(hosts) == 1 else None  # ausente o repetido: no hay nada que comparar
+    if host is None:
+        return JSONResponse({"error": "host_not_allowed", "detail": "Esta dirección no es la de esta instancia de Community Lens. "
+                             "Abrila con la dirección que muestra al arrancar; para usarla con otro nombre, agregalo a CL_ALLOWED_HOSTS en .env."},
+                            status_code=421)
+    if request.method in SAFE_METHODS:
+        return None
+    # El origen propio es el de la dirección por la que entró la solicitud. La app sirve http, nunca https.
+    own = f"http://{host}" + ("" if settings().port == 80 else f":{settings().port}")
+    origins, sites = request.headers.getlist("origin"), request.headers.getlist("sec-fetch-site")
+    # Sin Origin ni Sec-Fetch-Site (curl, un script) no hay nada que indique otro sitio: el navegador los agrega
+    # solo, y una página no puede quitarlos ni falsearlos. Si están, tienen que decir "la propia app".
+    if (len(origins) > 1 or any(not (o.isascii() and o.lower() == own) for o in origins)
+            or len(sites) > 1 or any(v.lower() not in ("same-origin", "none") for v in sites)):
+        return JSONResponse({"error": "cross_origin", "detail": "La solicitud viene de otro sitio y no se ejecutó. "
+                             "Los cambios solo se aceptan desde la propia app."}, status_code=403)
+    return None
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    resp = await call_next(request)
+    # Es el único middleware y envuelve todo (API, páginas y archivos montados): lo rechazado no llega a ninguna ruta.
+    resp = _refusal(request) or await call_next(request)
     if not request.url.path.startswith(("/api/report", "/como-funciona", "/periodico/")):
         # Sin scripts ni estilos en línea, sin orígenes externos.
         resp.headers["Content-Security-Policy"] = (
@@ -146,7 +227,7 @@ async def import_error(_, exc: importer.ImportError_):
 def config():
     s = settings()
     return {"default_timezone": s.default_tz, "host": s.host, "port": s.port,
-            "loopback": s.host in ("127.0.0.1", "localhost", "::1"),
+            "loopback": s.loopback,
             "taxonomy": {"version": TAXONOMY_VERSION, "categories": taxonomy_public()},
             "providers": classify.providers_info()}
 
