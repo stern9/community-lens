@@ -205,3 +205,31 @@ def test_delete_chat_removes_pages_read_for_the_newspaper(con):
     assert pages() == ["https://example.org/nota/comun", "https://example.org/nota/de-b"]
     importer.delete_chat(con, b)
     assert pages() == [] and count(con, "SELECT COUNT(*) FROM links") == 0
+
+
+SHIFT = ("[3/20/26, 10:00:00] Ana Ensayo: hola a todos\n[3/20/26, 10:00:{s}] Beto Ensayo: bien\n"
+         "[3/20/26, 10:01:00] Ana Ensayo: sigo\n[3/20/26, 10:02:00] Beto Ensayo: listo\n")
+
+
+def test_same_record_one_second_apart_between_exports_is_not_duplicated(con):
+    """WhatsApp escribe algunos registros con un segundo de diferencia de una exportación a otra del mismo chat."""
+    a = do_import(con, None, data=SHIFT.format(s="30").encode(), file_name="a.txt")
+    later = (SHIFT.format(s="31") + "[3/20/26, 10:03:00] Ana Ensayo: nuevo\n").encode()
+    rec = do_import(con, None, data=later, file_name="b.txt", chat_id=a["chat_id"])["reconciliation"]
+    assert (rec["matched_existing"], rec["added"], rec["only_in_previous"], rec["ambiguous_pairs"]) == (4, 1, 0, 0)
+    assert count(con) == 5 and count(con, "SELECT COUNT(*) FROM messages WHERE needs_review=1") == 0
+    # El registro corrido es uno solo, conserva su primera hora y queda trazado a los dos archivos.
+    bien = con.execute("SELECT id, ts_written FROM messages WHERE text='bien'").fetchall()
+    assert len(bien) == 1 and bien[0]["ts_written"].endswith("10:00:30")
+    assert count(con, "SELECT COUNT(*) FROM message_sources WHERE message_id=?", bien[0]["id"]) == 2
+
+
+@pytest.mark.parametrize("second_file, rows", [
+    (SHIFT.format(s="32"), 2),                                                          # dos segundos: son dos registros
+    (SHIFT.format(s="30").replace("bien\n", "bien\n[3/20/26, 10:00:31] Beto Ensayo: bien\n"), 2),  # repetido legítimo
+    (SHIFT.format(s="31").replace("Beto Ensayo: bien", "Ana Ensayo: bien"), 2),         # otro autor
+])
+def test_one_second_tolerance_does_not_merge_different_records(con, second_file, rows):
+    a = do_import(con, None, data=SHIFT.format(s="30").encode(), file_name="a.txt")
+    do_import(con, None, data=second_file.encode(), file_name="b.txt", chat_id=a["chat_id"])
+    assert count(con, "SELECT COUNT(*) FROM messages WHERE text='bien'") == rows
