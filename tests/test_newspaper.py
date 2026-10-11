@@ -4,8 +4,7 @@ import json
 import re
 
 import pytest
-from conftest import FakeLLM, FakeNet
-from fastapi.testclient import TestClient
+from conftest import FakeLLM, FakeNet, api_client
 from test_contract import check
 
 from community_lens import llm, newspaper
@@ -57,9 +56,8 @@ def no_network(monkeypatch):
 
 @pytest.fixture
 def client(no_network, setenv):
-    from community_lens.api import app
     setenv(ANTHROPIC_API_KEY="k-demo")
-    with TestClient(app) as c:
+    with api_client() as c:
         pv = c.post("/api/imports/preview", params={"filename": "chat.txt"}, content=CHAT).json()
         cid = c.post("/api/imports/commit", json={"token": pv["token"], "file_name": "chat.txt", "date_order": "MDY", "chat_name": "Demo"}).json()["chat_id"]
         yield c, cid

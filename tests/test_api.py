@@ -3,16 +3,14 @@ import re
 from pathlib import Path
 
 import pytest
-from conftest import fixture_bytes
-from fastapi.testclient import TestClient
+from conftest import api_client, fixture_bytes
 
 WEB = Path(__file__).parent.parent / "web"
 
 
 @pytest.fixture
 def client():
-    from community_lens.api import app
-    with TestClient(app) as c:
+    with api_client() as c:
         yield c
 
 

@@ -18,6 +18,7 @@ LOAD_DOTENV = True
 ENV: dict[str, tuple[str, str]] = {
     "host": ("CL_HOST", "127.0.0.1"),
     "port": ("CL_PORT", "8765"),
+    "allowed_hosts": ("CL_ALLOWED_HOSTS", ""),
     "db_path": ("CL_DB_PATH", "data/community_lens.db"),
     "default_tz": ("CL_DEFAULT_TZ", "America/Costa_Rica"),
     "jev_enabled": ("JEV_ENABLED", "0"),
@@ -38,6 +39,8 @@ ENV: dict[str, tuple[str, str]] = {
     "gemini_label": ("GEMINI_LABEL", ""),
 }
 ENV_VARS = tuple(var for var, _ in ENV.values())
+# Valores de CL_HOST con los que la app solo se alcanza desde esta máquina.
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
 
 def _load_dotenv() -> None:
@@ -56,6 +59,7 @@ def _load_dotenv() -> None:
 class Settings:
     host: str
     port: int
+    allowed_hosts: str  # nombres extra con los que se puede abrir la app, separados por coma (ver api.py)
     db_path: str
     default_tz: str
     jev_enabled: bool
@@ -75,6 +79,10 @@ class Settings:
     gemini_api_key: str = field(repr=False)
     gemini_model: str
     gemini_label: str
+
+    @property
+    def loopback(self) -> bool:
+        return self.host in LOOPBACK
 
     @property
     def staging_dir(self) -> Path:

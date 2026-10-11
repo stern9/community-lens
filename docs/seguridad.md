@@ -6,6 +6,26 @@ Qué sale de la máquina, y cuándo, está en la tabla "Privacidad" del [README]
 
 - La app escucha solo en `127.0.0.1`. No hay autenticación: no cambiés `CL_HOST` en una red compartida (si lo
   hacés, la app lo avisa al arrancar y en la barra superior).
+- **Solo responde a su propia dirección.** Que escuche en `127.0.0.1` no alcanza: tu navegador también está en
+  esta máquina y corre páginas de otros. Una de esas páginas puede hacer que su propio nombre pase a apuntar a
+  `127.0.0.1` (se conoce como *DNS rebinding*) y, como para el navegador sigue siendo "el mismo sitio", leer la API
+  entera: búsquedas y mensajes incluidos. Por eso la app mira a qué dirección iba dirigida cada solicitud (el
+  encabezado `Host`) y solo atiende `localhost`, `127.0.0.1` o `[::1]` con el puerto configurado. Cualquier otra
+  recibe un error 421, sea la API, una página o un archivo. La comparación es exacta: no valen un nombre que
+  contenga uno permitido, otro puerto ni un punto final, y no se miran encabezados de proxy (`X-Forwarded-Host`).
+- **Solo modifica datos si la solicitud viene de la propia app.** Una página ajena también puede enviarle una
+  solicitud a la dirección correcta sin poder leer la respuesta, y con eso bastaría para deshacer una unión de
+  alias o cambiar la clasificación vigente. El navegador anota de qué sitio sale cada solicitud (`Origin`,
+  `Sec-Fetch-Site`) y una página no puede cambiarlo: todo lo que no sea leer (`POST`, `PATCH`, `DELETE`…) se
+  rechaza con un error 403 si esa anotación no dice exactamente "esta misma app". Una solicitud sin esa anotación
+  (`curl`, un script tuyo) se atiende: los navegadores actuales la ponen siempre, así que no viene de una página.
+- **Qué no cubre.** Sigue sin haber autenticación: cualquier programa de esta máquina puede usar la API, y con
+  `CL_HOST` fuera de loopback también cualquier equipo de la red. En ese caso la app acepta además que la abrás por
+  la dirección IP de la máquina (una dirección IP no se puede hacer pasar por otra con el truco del nombre); para
+  abrirla con un nombre hay que listarlo en `CL_ALLOWED_HOSTS` (o usarlo como `CL_HOST`), y el nombre solo vale
+  con el puerto de la app. Un proxy delante no está contemplado: si reenvía el nombre público, la app responde 421
+  a todo; y aunque reenvíe `Host: 127.0.0.1:8765`, detrás de HTTPS las modificaciones se rechazan, porque la app
+  solo reconoce como propio el origen `http://` por el que la sirve.
 - **Páginas enlazadas.** Un enlace del chat lo escribió cualquier miembro del grupo, así que al descargarlo:
   solo se aceptan direcciones `http(s)` públicas; se rechaza el nombre entero si alguna de sus direcciones es
   privada o local; la conexión se hace a la misma dirección IP que se verificó (no se vuelve a resolver el

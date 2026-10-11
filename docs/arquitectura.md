@@ -105,4 +105,5 @@ Sin red, con una base temporal por prueba y sin leer el `.env` de quien las corr
 | `test_llm.py` | Qué se envía a Anthropic, OpenAI y Gemini, traducción de errores sin exponer la key, respuestas mal formadas |
 | `test_contract.py` | Respuestas y cuerpos de solicitud coinciden con los tipos de TypeScript; el TypeScript compila en modo estricto y `web/dist` está al día |
 | `test_api.py` | Flujo completo por HTTP, validación de cuerpos (422, nunca 500), cabeceras de seguridad, frontend sin `innerHTML`, sin enlaces inventados a WhatsApp, diagrama sin acceso a red |
+| `test_origin.py` | Solo se atiende el `Host` de la instancia (puerto, mayúsculas, punto final, nombres que contienen uno permitido, ausente o repetido, `CL_HOST` fuera de loopback); nada modifica con `Origin` o `Sec-Fetch-Site` ajenos; todas las rutas registradas, sin dejar rastro |
 | `test_config.py`, `test_main.py` | La configuración sale de un solo lugar y no lee `.env` en pruebas; `--help` y argumentos desconocidos no arrancan nada |
