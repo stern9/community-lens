@@ -173,6 +173,25 @@ def _keys_for(existing: list[dict], minute: bool) -> list[str]:
     return [_key(e["ts_utc"], e["author_raw"], e["text"], minute) for e in existing]
 
 
+def _one_second_twins(old: list[dict], recs, utcs, js: range) -> dict[int, int]:
+    """{índice del registro nuevo: id del ya guardado} para los que son el mismo registro con un segundo de diferencia.
+    WhatsApp no escribe siempre el mismo segundo: entre una exportación sin archivos y una con archivos del mismo
+    chat, algunos registros (sobre todo avisos del sistema) salen corridos exactamente un segundo. Solo se mira
+    dentro de un tramo donde ambos lados difieren, así que un repetido legítimo que está en los dos archivos no entra."""
+    by_content: dict[tuple[str, str], list[dict]] = {}
+    for e in old:
+        by_content.setdefault((P.clean_author(e["author_raw"]) if e["author_raw"] else "", P.match_text(e["text"])), []).append(e)
+    twins: dict[int, int] = {}
+    for j in js:
+        r = recs[j]
+        for e in by_content.get((P.clean_author(r.author_raw) if r.author_raw else "", P.match_text(r.text)), ()):
+            seen = datetime.strptime(e["ts_utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+            if e["id"] not in twins.values() and abs((seen - utcs[j]).total_seconds()) <= 1:
+                twins[j] = e["id"]
+                break
+    return twins
+
+
 def _window(existing: list[dict], lo_utc: str, hi_utc: str) -> tuple[int, int]:
     """Índices [i0, i1) de la secuencia existente que caen en la ventana temporal nueva."""
     idx = [i for i, e in enumerate(existing) if lo_utc <= e["ts_utc"] <= hi_utc]
@@ -397,11 +416,16 @@ def commit(con, token: str, file_name: str, *, chat_id: int | None, chat_name: s
             elif tag == "insert":
                 merged.extend(insert(j) for j in range(b0, b1))
             else:  # replace: ambos lados difieren en este tramo
-                summary["only_in_previous"] += a1 - a0
-                old = win[a0:a1]
+                twins = {} if minute else _one_second_twins(win[a0:a1], recs, utcs, range(b0, b1))
+                summary["matched_existing"] += len(twins)
+                summary["only_in_previous"] += a1 - a0 - len(twins)
+                old = [e for e in win[a0:a1] if e["id"] not in twins.values()]
                 flagged_old: set[int] = set()
-                block: list[tuple[str, int, int | None]] = [(e["ts_utc"], 0, e["id"]) for e in old]
+                block: list[tuple[str, int, int | None]] = [(e["ts_utc"], 0, e["id"]) for e in win[a0:a1]]
                 for j in range(b0, b1):
+                    if j in twins:  # el mismo registro, un segundo corrido: se anota la fuente y no se inserta
+                        add_source(twins[j], recs[j])
+                        continue
                     u = fmt_utc(utcs[j].replace(second=0) if minute else utcs[j])
                     near = [e for e in old if (e["ts_utc"][:16] if minute else e["ts_utc"][:19]) == (u[:16] if minute else u[:19])]
                     review = "solape_ambiguo" if near else None
