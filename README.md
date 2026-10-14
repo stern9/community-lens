@@ -78,7 +78,7 @@ Sin pantalla, para automatizarlo:
 
 Importa la exportación, genera la edición de los 7 días que terminan en el último día con mensajes y escribe
 `sitio/index.html` más una página por edición en `sitio/ediciones/`. Es solo HTML: se sube a cualquier hosting
-estático. `.venv/bin/python -m community_lens periodico --help` lista todas las opciones (rango, modelo, lecturas de la
+estático. Lo que subás es la edición completa: si generaste lecturas de la conversación, van incluidas. `.venv/bin/python -m community_lens periodico --help` lista todas las opciones (rango, modelo, lecturas de la
 conversación, publicar sin generar). Más detalle en [docs/periodico.md](docs/periodico.md).
 
 ## Privacidad
@@ -105,7 +105,7 @@ ellas; tus archivos originales no se tocan. El resto está en [docs/seguridad.md
 - OpenAI y Gemini están implementados y probados con respuestas simuladas, pero no contra el servicio real
   (Claude sí).
 - El TXT de WhatsApp no trae IDs de mensaje, reacciones, respuestas citadas, adjuntos ni lista de miembros.
-  No existen enlaces para abrir un mensaje en WhatsApp, ni se puede calcular "miembros silenciosos".
+  No existen enlaces para abrir un mensaje en WhatsApp.
 - Las horas son las del teléfono que exportó. Dos exportaciones del mismo chat hechas en zonas distintas necesitan
   que declarés la zona de cada una para reconciliarse.
 - La reconciliación compara hora, autor y texto. Si dos teléfonos muestran al mismo autor de forma distinta
@@ -121,27 +121,7 @@ ellas; tus archivos originales no se tocan. El resto está en [docs/seguridad.md
 
 ## Desarrollo
 
-```bash
-.venv/bin/pip install -r requirements-dev.txt   # una vez
-./scripts/check.sh                              # linter + pruebas (+ frontend si hay node_modules)
-```
-
-Las dependencias de Python van con versión exacta en `requirements.txt` y `requirements-dev.txt`, que se generan
-desde `requirements.in` y `requirements-dev.in`. Para agregar o actualizar una, editá el `.in` y regenerá con
-[pip-tools](https://pip-tools.readthedocs.io/) (`pip-compile --strip-extras requirements.in` y lo mismo con
-`requirements-dev.in`); Dependabot propone las actualizaciones una vez al mes.
-
-Las pruebas usan solo datos sintéticos (`tests/fixtures/`), una base temporal por prueba y ninguna llamada de red;
-tampoco leen tu `.env`. GitHub Actions corre el linter y las pruebas (Python 3.11 y 3.12) en cada pull request
-(`.github/workflows/tests.yml`); los cambios entran a `main` por pull request. Cómo proponer uno:
-[CONTRIBUTING.md](CONTRIBUTING.md).
-
-Para cambiar el frontend (TypeScript en `web/src/`, compilado a `web/dist/`, que va versionado):
-
-```bash
-npm install      # una vez; sin esto, pytest se salta la prueba que compila el frontend
-npm run check    # regenera el esquema de la API y compila; una prueba falla si quedan desactualizados
-```
+Pruebas, dependencias y cómo proponer un cambio: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Documentación
 
@@ -166,4 +146,4 @@ Los diagramas están hechos con [Archify](https://github.com/tt-a1i/archify) (li
 Community Lens se publica bajo la [licencia MIT](LICENSE). Las librerías copiadas en `web/vendor/` conservan la suya
 (ver [web/vendor/README.md](web/vendor/README.md)).
 
-[@stern9](https://github.com/stern9): 🤖 Generated with [Claude Code](https://claude.com/claude-code) · ☀️ Y Sol contraataca, desde [Codex](https://openai.com/codex/).
+[@stern9](https://github.com/stern9): 🤖 Generated with [Claude Code](https://claude.com/claude-code) (Claude Opus 5.5) · ☀️ Y Sol contraataca, desde [Codex](https://openai.com/codex/).

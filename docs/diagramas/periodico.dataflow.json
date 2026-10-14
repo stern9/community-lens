@@ -644,7 +644,7 @@
       "from": "edition",
       "to": "site",
       "label": "publicar",
-      "classification": "sin conversación",
+      "classification": "edición completa",
       "variant": "emphasis",
       "labelAt": [
         960,
@@ -668,7 +668,7 @@
       "items": [
         "Siempre: el texto público de las páginas enlazadas, al modelo elegido",
         "Solo con confirmación: mensajes con seudónimos, sin teléfonos ni correos",
-        "Al sitio público: artículos y enlaces; la lectura de la conversación queda para miembros"
+        "Al sitio: la edición completa, con las lecturas de la conversación si se generaron"
       ]
     },
     {

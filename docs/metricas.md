@@ -42,5 +42,5 @@ Son estimaciones (con las correcciones humanas aplicadas), no conteos oficiales.
 
 ## Enlaces
 
-En Recursos y en el periódico, "el mismo enlace" es una sola cosa: no distingue `www.` / `m.`, barra final ni
-parámetros `utm_…`. Las "compartidas" de un enlace son los mensajes distintos que lo incluyen.
+Las "compartidas" de un enlace son los mensajes distintos que lo incluyen. Qué cuenta como "el mismo enlace" (la
+misma regla en Recursos y en el periódico) está en [periodico.md](periodico.md#quién-produce-cada-parte).
