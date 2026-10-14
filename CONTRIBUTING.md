@@ -30,18 +30,26 @@ conocer (sin framework en el frontend, SQL sin ORM, nada sale de la máquina sin
 
 ## Cambiar código
 
-1. Arrancá la app y corré las pruebas como indica el [README](README.md#desarrollo).
+1. Arrancá la app como indica el [README](README.md#arrancar) e instalá las herramientas de desarrollo:
+   ```bash
+   .venv/bin/pip install -r requirements-dev.txt   # una vez
+   ./scripts/check.sh                              # lo mismo que corre CI: linter, frontend (si hay node_modules) y pruebas
+   ```
 2. Leé [AGENTS.md](AGENTS.md): son las reglas del proyecto y valen igual si el cambio lo escribe una persona o
    un agente de código. Si usás un agente, vos respondés por lo que entrega.
-3. Hacé un cambio acotado, con su prueba. Antes de entregarlo:
-   ```bash
-   ./scripts/check.sh   # lo mismo que corre CI: linter, pruebas y, si tocaste web/src/, el frontend
-   ```
+3. Hacé un cambio acotado, con su prueba, y corré `./scripts/check.sh` antes de entregarlo. Si tocás `web/src/`,
+   hace falta Node y regenerar `web/dist/`: ver [docs/frontend.md](docs/frontend.md).
 4. Mensajes de commit: una línea corta con prefijo de tipo (`feature:`, `fix:`, `chore:`).
 5. Abrí un pull request desde una rama (`fix/…`, `feature/…` o `chore/…`); a `main` no se sube directo.
    Decí qué issue resuelve, qué verificaste y qué no. Se integra con las pruebas de CI en verde.
 
-Las pruebas no usan la red ni datos reales; un cambio que lo necesite para pasar no se acepta.
+Las pruebas usan solo datos sintéticos (`tests/fixtures/`), una base temporal por prueba y ninguna llamada de red;
+tampoco leen tu `.env`. Un cambio que necesite red o datos reales para pasar no se acepta.
+
+**Dependencias de Python.** Van con versión exacta en `requirements.txt` y `requirements-dev.txt`, que se generan
+desde `requirements.in` y `requirements-dev.in`. Para agregar o actualizar una, editá el `.in` y regenerá con
+[pip-tools](https://pip-tools.readthedocs.io/) (`pip-compile --strip-extras requirements.in` y lo mismo con
+`requirements-dev.in`); Dependabot propone las actualizaciones una vez al mes.
 
 ## Qué pasa con tu pull request
 

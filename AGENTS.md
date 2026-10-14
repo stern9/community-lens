@@ -39,7 +39,7 @@ lo pida. No propongás lo que ya está decidido (ver al final).
   líneas de co-autoría. Los cambios llegan a `main` por pull request, con las pruebas de CI en verde.
 - No agregués dependencias (Python ni npm) sin preguntar: la app corre sin Node y sin internet, y cada
   dependencia es algo que el usuario instala en su máquina. `requirements.txt` y `requirements-dev.txt` no se
-  editan a mano: se generan desde los `.in` con `pip-compile` (ver README).
+  editan a mano: se generan desde los `.in` con `pip-compile` (ver [CONTRIBUTING](CONTRIBUTING.md)).
 - No borrés ni renombrés columnas ni tablas. No hay migraciones: `db.py` crea lo que falta al conectar y existe
   una base real con el esquema actual. Un cambio de esquema o de datos derivados es aditivo, idempotente y se
   aplica al abrir una base vieja (el `ALTER TABLE` condicional en `db.connect` es el modelo). Una edición del

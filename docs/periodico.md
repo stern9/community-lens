@@ -67,12 +67,8 @@ Una edición se guarda como JSON en `editions.data` y se dibuja de nuevo cada ve
 mejora de la plantilla llega también a las ediciones viejas. `community_lens/edition.py` es el único lugar que
 conoce sus campos: los declara, lleva un número de formato (`FORMAT`) y tiene una sola función, `upgrade()`, que
 convierte cualquier edición guardada con una forma anterior a la actual. Abrir una edición vieja no la reescribe.
+La columna `editions.html`, de una versión anterior, no se lee (ver [arquitectura.md](arquitectura.md#modelo-de-datos)).
 
-La columna `editions.html` quedó de una versión anterior que guardaba también la página ya dibujada. No se lee;
-las ediciones nuevas la dejan vacía y las viejas conservan lo que tenían.
-
-## Origen de la idea
-
-El formato de periódico y la idea de que un modelo lea las páginas y arme la portada vienen de
-[ai-newtab](https://github.com/ThariqS/ai-newtab) de Thariq (`ThariqS`, licencia MIT). Aquí no se usa su código:
-la lectura se hace en Python y el diseño es una plantilla, para que cada edición salga con la misma forma.
+El formato de periódico se inspira en ai-newtab (créditos en el [README](../README.md#créditos-y-licencia)); aquí
+no se usa su código: la lectura se hace en Python y el diseño es una plantilla, para que cada edición salga con la
+misma forma.
