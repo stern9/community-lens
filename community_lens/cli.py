@@ -6,8 +6,9 @@
 
 Dos modos que no se mezclan. Generar (lo de siempre): importa el chat (si se pasa --archivo, o la exportación más
 nueva de --carpeta), genera la edición del rango y, con --salida, escribe un sitio estático. La edición nueva queda
-como borrador y no entra al sitio hasta que alguien la apruebe; --borrador escribe su vista previa con la banda
-"Borrador, no compartir". Actuar (--edicion N con --aprobar, --descartar, --recuperar o --borrador, o --listar):
+como borrador y no entra al sitio hasta que alguien la apruebe; --borrador escribe su vista previa: la versión
+pública (la que se publicaría, sin lecturas de la conversación ni el nombre del grupo) con la banda "Borrador, no
+compartir", que es lo que aprueba quien revisa. Actuar (--edicion N con --aprobar, --descartar, --recuperar o --borrador, o --listar):
 trabaja sobre lo guardado sin importar, generar, llamar al modelo ni descargar páginas. El sitio solo lleva
 ediciones aprobadas (los bytes guardados al aprobarlas) y las heredadas de antes de que existiera la aprobación.
 --aprobar al generar aprueba la recién generada sin que nadie vea el borrador: es para uso manual, nunca para un
@@ -16,7 +17,8 @@ Enviar texto del chat a un modelo exige pedir --lecturas y además --confirmo-en
 
 Códigos de salida, para que un guion decida sin leer mensajes: 0 hecho (edición generada, acción aplicada, sitio
 publicado con --solo-publicar o listado); 1 algo falló y hay que mirar (también si una edición no se pudo escribir
-en el sitio: una aprobada cuyo HTML no coincide con su hash o una guardada que esta versión no sabe leer); 2 argumentos mal usados (los rechaza argparse); 3 nada que
+en el sitio: una aprobada cuyo HTML no coincide con su hash, aprobada antes de la versión pública o con bytes con
+lecturas de la conversación, o una guardada que esta versión no sabe leer); 2 argumentos mal usados (los rechaza argparse); 3 nada que
 publicar esta vez (sin novedad, material insuficiente o un borrador pendiente), que se avisa y no reescribe el
 sitio. Con --json la salida estándar lleva un solo objeto JSON con el resultado y los mensajes para personas van a
 la salida de error; nunca lleva texto de mensajes del chat. La excepción es el código 2: argparse rechaza los
@@ -41,7 +43,8 @@ EXIT_OK, EXIT_ERROR, EXIT_USAGE, EXIT_NOTHING = 0, 1, 2, 3
 EXPORTS = (".zip", ".txt")
 EPILOG = """modos:
   generar  lo de siempre: importa (--archivo, --carpeta), genera la edición del rango y la deja como borrador;
-           --salida escribe el sitio solo con las aprobadas y heredadas, --borrador la vista previa con banda
+           --salida escribe el sitio solo con las aprobadas y heredadas, --borrador la vista previa: la versión
+           pública con banda, la que se publicaría y aprueba quien revisa
   actuar   --edicion N con --aprobar, --descartar, --recuperar o --borrador, o --listar: no importa, no genera,
            no llama al modelo ni descarga páginas; --edicion no se combina con --archivo, --carpeta, --continuar,
            --dias, --desde ni --hasta
@@ -53,7 +56,8 @@ códigos de salida:
   0  hecho: edición generada, acción aplicada (aprobada, descartada, recuperada, vista previa), sitio publicado
      con --solo-publicar o listado
   1  error: fecha inválida, grupo ambiguo, sin modelo, falló el modelo, archivo o carpeta sin exportaciones,
-     edición de otro grupo, o una edición que no se escribió en el sitio (el detalle dice por qué)
+     edición de otro grupo, o una edición que no se escribió en el sitio: dañada, aprobada antes de la versión
+     pública o con bytes con lecturas (el detalle dice por qué)
   2  argumentos mal usados (incluye --carpeta sin --grupo-id ni --grupo, --aprobar sin --aprobado-por o --canal,
      o alguno de ellos vacío o demasiado largo)
   3  nada que publicar esta vez: sin novedad, material insuficiente o (con --continuar) un borrador pendiente;
@@ -99,8 +103,8 @@ def _state(e: dict) -> str:
     ap = e["approval"]
     line = e["status"] + (f" por {ap['by']} ({ap['via']}, {ap['at']})" if ap and ap["by"] and e["status"] == "aprobada" else "")
     line += " · en el sitio" if e["in_site"] else " · fuera del sitio"
-    if e["hash_ok"] is False:
-        line += " · dañada: no coincide con su hash"
+    if e["blocked_reason"]:
+        line += f" · {e['blocked_reason']}"
     elif e["up_to_date"] is False:
         line += " · hay plantilla nueva: reaprobala para actualizarla"
     return line
@@ -160,7 +164,8 @@ def periodico(argv: list[str]) -> int:
     ap.add_argument("--salida", type=Path, help="carpeta donde escribir el sitio estático (index.html + ediciones/), solo con ediciones aprobadas")
     ap.add_argument("--solo-publicar", action="store_true", help="no genera: solo reescribe el sitio con las ediciones aprobadas")
     ap.add_argument("--borrador", type=Path, metavar="RUTA.html",
-                    help="escribe la vista previa con la banda «Borrador, no compartir» (de la recién generada o de --edicion); no toca el sitio")
+                    help="escribe la vista previa (de la recién generada o de --edicion): la versión pública, sin lecturas ni el nombre del "
+                         "grupo, con la banda «Borrador, no compartir»; no toca el sitio")
     ap.add_argument("--edicion", type=int, metavar="N", help="actuar sobre la edición N del grupo en lugar de generar una")
     ap.add_argument("--aprobar", action="store_true",
                     help="aprueba --edicion N o, al generar, la recién generada: esto último solo a mano, NUNCA en un guion programado "
@@ -281,11 +286,11 @@ def periodico(argv: list[str]) -> int:
             status = "generada"
         if a.borrador:
             a.borrador.parent.mkdir(parents=True, exist_ok=True)
-            a.borrador.write_text(newspaper.edition_html(con, eid, draft=True)[0], encoding="utf-8")
+            a.borrador.write_text(newspaper.edition_html(con, eid, draft=True, public=True)[0], encoding="utf-8")
             out["draft"] = str(a.borrador)
-            say(f"Vista previa de la edición {eid}, con la banda de borrador, escrita en {a.borrador}.")
+            say(f"Vista previa de la edición {eid} (versión pública, con la banda de borrador) escrita en {a.borrador}.")
         if a.salida:
-            site = newspaper.publish(con, chat["id"], chat["name"], a.salida)
+            site = newspaper.publish(con, chat["id"], a.salida)
             files = site["files"]
             out["site"] = {"dir": str(a.salida), "files": len(files), "skipped": site["skipped"]}
             say(f"Sitio escrito en {a.salida}: {len(files) - 1} edición(es) + index.html")

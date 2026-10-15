@@ -77,8 +77,9 @@ export const getEditions = (chatId) => getJson("/api/newspaper/editions?" + qs({
 export const approveEdition = (id, req) => sendJson(`/api/newspaper/editions/${id}/approve`, req);
 export const discardEdition = (id) => sendJson(`/api/newspaper/editions/${id}/discard`, {});
 export const restoreEdition = (id) => sendJson(`/api/newspaper/editions/${id}/restore`, {});
-/** `draft` fuerza la banda de borrador (para mandar a revisar una aprobada); sin él la decide el estado. */
-export const editionUrl = (id, download = false, draft = false) => {
-    const q = qs({ download, borrador: draft ? 1 : null });
+/** `draft` fuerza la banda de borrador (para mandar a revisar una aprobada); sin él la decide el estado.
+ *  `publicVersion` pide la versión que se publica: sin lecturas, cifras ni nombre del grupo. */
+export const editionUrl = (id, download = false, draft = false, publicVersion = false) => {
+    const q = qs({ download, borrador: draft ? 1 : null, publico: publicVersion ? 1 : null });
     return `/periodico/${id}` + (q ? "?" + q : "");
 };

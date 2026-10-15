@@ -189,6 +189,7 @@ function editionReady(r: NewspaperResult): Child[] {
     r.status === "borrador" ? h("p", null, "Quedó como borrador: aprobala en Ediciones guardadas para que entre en el sitio.") : null,
     h("div", { class: "actions" },
       h("a", { href: api.editionUrl(r.id), target: "_blank", rel: "noopener", class: "btnlink" }, "Abrir el periódico"),
+      h("a", { href: api.editionUrl(r.id, false, false, true), target: "_blank", rel: "noopener", class: "btnlink" }, "Versión pública"),
       h("a", { href: api.editionUrl(r.id, true), class: "btnlink" }, "Descargar HTML"))];
 }
 
@@ -204,7 +205,7 @@ function editionState(e: NewspaperEdition): string {
     case "heredada": return "heredada, sin registro de aprobación" + (e.in_site ? "" : " · reemplazada por una más nueva");
     case "aprobada": {
       const who = a && a.by ? `aprobada por ${a.by} (${a.via}, ${shortDay(a.at)})` : "aprobada";
-      if (e.hash_ok === false) return `${who} · dañada: no coincide con su hash`;
+      if (e.blocked_reason) return `${who} · ${e.blocked_reason}`;
       if (!e.in_site) return `${who} · reemplazada por una más nueva`;
       return `${who} · en el sitio` + (e.up_to_date === false ? " · hay plantilla nueva: reaprobá para actualizarla" : "");
     }
@@ -240,6 +241,7 @@ function editionRow(e: NewspaperEdition, reload: () => Promise<void>): HTMLLIEle
     e.sent.chat_messages ? `${n(e.sent.chat_messages)} mensajes enviados a ${e.sent.chat_to.join(" y ")} · ` : "sin texto del chat enviado · ",
     h("b", null, editionState(e)), " · ",
     h("a", { href: api.editionUrl(e.id), target: "_blank", rel: "noopener", class: "btnlink" }, "Abrir"), " ",
+    h("a", { href: api.editionUrl(e.id, false, false, true), target: "_blank", rel: "noopener", class: "btnlink" }, "Versión pública"), " ",
     h("a", { href: api.editionUrl(e.id, true), class: "btnlink" }, "Descargar HTML"), " ",
     actions, form, msg);
 }

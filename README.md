@@ -6,7 +6,8 @@ Corre en tu máquina, guarda todo en una base SQLite local y tiene dos usos:
 - **Estadísticas y mensajes**: conteos reproducibles, búsqueda de texto completo, documentos y enlaces compartidos,
   categorías revisables y un reporte agregado. Funciona sin ningún modelo de lenguaje y sin enviar nada afuera.
 - **Periódico**: una página para ponerse al día con lo que se compartió en un rango de fechas. Los enlaces, las
-  fechas y las cifras salen del chat; los titulares y resúmenes los redacta el modelo que configurés.
+  fechas y las cifras salen del chat (el sitio que publicás no lleva cifras); los titulares y resúmenes los redacta
+  el modelo que configurés.
 
 ![Cómo se arma una edición del periódico: qué pone el código, qué pone el modelo y qué sale de la máquina](docs/diagramas/periodico.png)
 
@@ -68,8 +69,8 @@ Las dos formas se pueden importar en el mismo grupo: un mensaje con adjunto se r
    Con varias keys, "Automático" redacta con la primera de esa lista y, si falla, pasa a la siguiente.
 2. En **Generar periódico** elegí el rango. Los atajos ("Última semana", etc.) cuentan hacia atrás desde el último
    día con mensajes del grupo, no desde hoy. Revisá qué enlaces entran y qué saldría de tu máquina, y generá.
-3. La edición queda guardada como **borrador**: se abre en el navegador (con la banda "Borrador, no compartir") o se
-   descarga como un solo archivo HTML. Revisala y aprobala en **Ediciones guardadas** (quién aprueba y por qué canal)
+3. La edición queda guardada como **borrador**: se abre en el navegador (con la banda "Borrador, no compartir"), se
+   descarga como un solo archivo HTML o se mira su **Versión pública**, la que iría al sitio. Revisala y aprobala en **Ediciones guardadas** (quién aprueba y por qué canal)
    antes de publicarla: el sitio solo lleva ediciones aprobadas.
 
 Sin pantalla, para automatizarlo:
@@ -80,11 +81,12 @@ Sin pantalla, para automatizarlo:
 
 Importa la exportación, genera la edición de los 7 días que terminan en el último día con mensajes y escribe
 `sitio/index.html` más una página por edición en `sitio/ediciones/`. Es solo HTML: se sube a cualquier hosting
-estático. Lo que subás es la edición completa: si generaste lecturas de la conversación, van incluidas. `.venv/bin/python -m community_lens periodico --help` lista todas las opciones (rango, modelo, lecturas de la
+estático. El sitio lleva solo la versión pública de cada edición: sin lecturas de la conversación, sin el nombre del
+grupo ni cifras del chat. `.venv/bin/python -m community_lens periodico --help` lista todas las opciones (rango, modelo, lecturas de la
 conversación, publicar sin generar). Para programarlo, `--carpeta` toma la exportación más nueva de una carpeta,
 `--continuar` cubre solo los días posteriores a la última edición aprobada, y el código de salida distingue "nada
 nuevo" (3) de "falló" (1). La edición generada queda como borrador y no entra al sitio: `--borrador RUTA.html` escribe
-su vista previa para revisarla, y `--edicion N --aprobar --aprobado-por … --canal …` la aprueba y, con `--salida`, la
+su vista previa para revisarla (la versión pública con la banda de borrador), y `--edicion N --aprobar --aprobado-por … --canal …` la aprueba y, con `--salida`, la
 publica. Más detalle en [docs/periodico.md](docs/periodico.md).
 
 ## Privacidad
@@ -98,6 +100,7 @@ Esto es todo lo que sale de tu máquina, y cuándo:
 | Clasificar con Jev (apagado por defecto; pide confirmación en cada ejecución) | El texto de cada mensaje a clasificar y el de hasta `JEV_CONTEXT_MESSAGES` mensajes previos (2 por defecto) | `api.typesafe.ai` |
 | Generar una edición del periódico | Una solicitud a cada página enlazada, desde tu máquina; el texto público de esas páginas | Los sitios enlazados; el modelo que redacta |
 | Pedir además una "lectura de la conversación" (casilla de confirmación aparte) | Los mensajes del rango con seudónimos (P01, P02…), sin teléfonos, correos ni menciones. Un nombre escrito dentro de un mensaje sí puede ir | Cada modelo marcado |
+| Publicar el sitio (`--salida`) | La versión pública de cada edición aprobada: sin lecturas de la conversación, sin el nombre del grupo y sin cifras del chat; sí los enlaces y las fechas en que se compartieron | El hosting que elijas |
 
 Las keys se leen de `.env`, no se registran y nunca llegan al navegador. **Eliminar grupo y datos** (en *Importar
 chat*) borra todo lo derivado de ese grupo, incluidas sus ediciones y el texto de las páginas que se leyeron para

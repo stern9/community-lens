@@ -24,17 +24,22 @@ const put = (node, ...children) => { node.children = children.flat(Infinity).fil
 const previews = [], generations = [], approvals = [], discards = [], confirms = [];
 let editionLoads = 0;
 // Una edición guardada por estado, con todos los campos de NewspaperEdition.
-const approval = { hash: "sha256:" + "0".repeat(64), by: "Jaime", via: "WhatsApp", at: "2026-10-21T14:03:00Z", to: "sitio público" };
+const approval = { hash: "sha256:" + "0".repeat(64), by: "Jaime", via: "WhatsApp", at: "2026-10-21T14:03:00Z", to: "sitio público", public: true };
 const edition = (id, status, extra = {}) => ({
   id, from: "2026-10-01", to: "2026-10-07", created_at: "2026-10-08T12:00:00Z", editor: { name: "demo", label: "Demo", model: "demo" },
   sent: { pages: 1, pages_to: "Demo", pages_tried: [], chat_messages: 0, chat_to: [] }, status,
-  approval: null, hash_ok: null, up_to_date: null, in_site: false, ...extra });
+  approval: null, hash_ok: null, up_to_date: null, leaks_readings: null, blocked_reason: null, in_site: false, ...extra });
 const EDITIONS = [
   edition(5, "borrador"),
-  edition(4, "aprobada", { approval, hash_ok: true, up_to_date: true, in_site: true }),
-  edition(3, "aprobada", { approval, hash_ok: true, up_to_date: false, in_site: true }),
+  edition(4, "aprobada", { approval, hash_ok: true, up_to_date: true, leaks_readings: false, in_site: true }),
+  edition(3, "aprobada", { approval, hash_ok: true, up_to_date: false, leaks_readings: false, in_site: true }),
   edition(2, "heredada", { in_site: true }),
   edition(1, "descartada"),
+  // Aprobadas que no entran al sitio hasta reaprobarlas: una de antes de la versión pública y otra con lecturas en los bytes.
+  edition(7, "aprobada", { approval: { ...approval, public: false }, hash_ok: true, up_to_date: false, leaks_readings: false,
+    blocked_reason: "aprobada antes de la versión pública: reaprobala para publicarla" }),
+  edition(6, "aprobada", { approval, hash_ok: true, up_to_date: true, leaks_readings: true,
+    blocked_reason: "contiene lecturas de la conversación: reaprobala para publicarla" }),
 ];
 const view = h("main");
 const state = { chatId: 1, from: "", to: "" };
@@ -51,7 +56,8 @@ const api = {
     };
   },
   async getEditions() { editionLoads++; return EDITIONS; },
-  editionUrl: (id, download = false) => `/periodico/${id}` + (download ? "?download=true" : ""),
+  editionUrl: (id, download = false, draft = false, publicVersion = false) => `/periodico/${id}` +
+    (download || draft || publicVersion ? "?" + [download && "download=true", draft && "borrador=1", publicVersion && "publico=1"].filter(Boolean).join("&") : ""),
   async discardEdition(id) { discards.push(id); return EDITIONS[0]; },
   async restoreEdition() { assert.fail("la prueba no recupera"); },
   async approveEdition(id, body) { approvals.push({ id, ...body }); return EDITIONS[0]; },
@@ -109,18 +115,28 @@ assert.equal(generate.disabled, true);
 const text = (node) => (typeof node === "object" ? node.children.map(text).join("") : String(node));
 const savedList = () => nodes.filter((node) => node.tag === "ul" && node.class === "editions").at(-1);
 const rows = () => savedList().children.map(text);
-assert.equal(rows().length, 4);
+assert.equal(rows().length, 6);
 assert.match(rows()[0], /· borrador · Abrir/);
 assert.match(rows()[1], /aprobada por Jaime \(WhatsApp, 21 oct\) · en el sitio · Abrir/);
 assert.match(rows()[2], /· en el sitio · hay plantilla nueva: reaprobá para actualizarla/);
 assert.match(rows()[3], /heredada, sin registro de aprobación · Abrir/);
+assert.match(rows()[4], /aprobada por Jaime \(WhatsApp, 21 oct\) · aprobada antes de la versión pública: reaprobala para publicarla · Abrir/);
+assert.match(rows()[5], /aprobada por Jaime \(WhatsApp, 21 oct\) · contiene lecturas de la conversación: reaprobala para publicarla · Abrir/);
+assert.ok(rows().slice(4).every((row) => row.includes("Aprobar de nuevo…")));
+// Cada fila enlaza a su versión pública, la que se publicaría, después de "Abrir".
+const links = (row) => row.children.filter((node) => node.tag === "a");
+for (const row of savedList().children) {
+  const pub = links(row).find((node) => text(node) === "Versión pública");
+  assert.ok(pub && /[?&]publico=1\b/.test(pub.href) && pub.target === "_blank" && pub.rel === "noopener" && pub.class === "btnlink");
+  assert.ok(links(row).indexOf(pub) === links(row).findIndex((node) => text(node) === "Abrir") + 1);
+}
 assert.ok(rows().every((row) => !row.includes("descartada")));
 const button = (label) => nodes.filter((node) => node.tag === "button" && text(node) === label).at(-1);
 button("Mostrar 1 descartada").handlers.click();
-assert.equal(rows().length, 5);
+assert.equal(rows().length, 7);
 assert.match(rows()[4], /· descartada · Abrir.*Recuperar/);
 button("Ocultar descartadas").handlers.click();
-assert.equal(rows().length, 4);
+assert.equal(rows().length, 6);
 // Aprobar despliega quién y canal en la misma fila, llama a la API y vuelve a pedir la lista.
 const loads = editionLoads;
 savedList().children[0].children.find((node) => node.tag === "button" && text(node) === "Aprobar…").handlers.click();

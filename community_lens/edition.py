@@ -1,8 +1,9 @@
 """Qué es una edición guardada del periódico. Es el único lugar que conoce sus campos.
 
 Una edición se guarda como JSON (editions.data) y se dibuja de nuevo cada vez que se abre, así una mejora de la
-plantilla llega también a las ediciones viejas; lo que se publica de una aprobada, en cambio, son los bytes que se
-dibujaron al aprobarla (ver "Ciclo de vida"). Quien la arma (newspaper.py) usa build(); quien la
+plantilla llega también a las ediciones viejas; lo que se publica de una aprobada, en cambio, son los bytes de su
+versión pública (newspaper_html.render con public: sin lecturas, sin "En números" ni nombre del grupo) dibujados
+al aprobarla (ver "Ciclo de vida"). Quien la arma (newspaper.py) usa build(); quien la
 dibuja (newspaper_html.py) recibe siempre una Edition completa, porque todo lo que sale de la base pasa por
 upgrade(), que lleva cualquier forma anterior a la actual. Para agregar un campo: declararlo acá, llenarlo en
 build(), darle su valor por defecto en upgrade() y subir FORMAT.
@@ -17,10 +18,12 @@ lo que tenían; no se borra nada).
 
 Ciclo de vida (editions.status, fuera de data: es de la fila, no del contenido, y no cambia FORMAT):
   borrador    toda edición recién generada (save). No se publica; su página lleva la banda de borrador.
-  aprobada    approve() la dibujó una vez y guardó esos bytes (approved_html) con su sha256 y quién, por qué canal,
-              cuándo y adónde (approval). Se publican esos bytes tal cual, solo si siguen coincidiendo con el hash.
+  aprobada    approve() dibujó una vez su versión pública, sin banda, y guardó esos bytes (approved_html) con su
+              sha256 y quién, por qué canal, cuándo y adónde (approval, con "public": true). Se publican esos bytes
+              tal cual, solo si blocked_reason() no los frena: hash roto, aprobada antes de la versión pública (sin
+              "public") o bytes con lecturas de la conversación.
   descartada  oculta y fuera del sitio; restore() la vuelve a borrador sin tocar approval ni approved_html.
-  heredada    guardada antes de que existiera la aprobación: se publica dibujándola como siempre, sin hash. Ningún
+  heredada    guardada antes de que existiera la aprobación: se publica dibujando su versión pública, sin hash. Ningún
               INSERT nuevo la produce (es el valor por defecto de la columna para las filas viejas).
 """
 from __future__ import annotations
@@ -141,6 +144,7 @@ class Approval(TypedDict):
     via: str
     at: str                  # instante UTC, AAAA-MM-DDTHH:MM:SSZ
     to: str | None
+    public: bool             # False: aprobada antes de la versión pública; sus bytes son la página completa
 
 
 STATUSES = ("borrador", "aprobada", "descartada", "heredada")
@@ -197,14 +201,16 @@ def upgrade_sent(s: dict) -> Sent:
 
 def upgrade_approval(raw: str) -> Approval:
     """El registro de aprobación guardado (texto JSON). Si alguien lo dejó incompleto o ilegible por SQL, los campos
-    que faltan salen vacíos: sin hash, hash_ok() la da por dañada, y la lista se sigue mostrando."""
+    que faltan salen vacíos: sin hash, hash_ok() la da por dañada, y la lista se sigue mostrando. Sin "public" (las
+    aprobadas antes de la versión pública) es False: blocked_reason() la deja fuera del sitio."""
     try:
         a = json.loads(raw)
     except ValueError:
         a = None
     a = a if isinstance(a, dict) else {}
     return {"hash": str(a.get("hash") or ""), "by": str(a.get("by") or ""), "via": str(a.get("via") or ""),
-            "at": str(a.get("at") or ""), "to": str(a["to"]) if a.get("to") else None}
+            "at": str(a.get("at") or ""), "to": str(a["to"]) if a.get("to") else None,
+            "public": a.get("public") is True}
 
 
 def page_hash(page: bytes) -> str:
@@ -223,6 +229,27 @@ def hash_ok(row) -> bool | None:
         return None
     page = approved_bytes(row)
     return bool(row["approval"]) and page is not None and upgrade_approval(row["approval"])["hash"] == page_hash(page)
+
+
+def blocked_reason(row) -> str | None:
+    """Por qué una aprobada no entra al sitio, o None si entra (o si no es aprobada: el resto lo decide su estado).
+    Un texto corto para personas: publish() lo pone en "skipped" y listing() en la fila, que muestran --listar y la
+    pantalla tal cual."""
+    if row["status"] != "aprobada":
+        return None
+    if not hash_ok(row):
+        return "dañada: no coincide con su hash; reaprobala para publicarla"
+    if not upgrade_approval(row["approval"])["public"]:
+        return "aprobada antes de la versión pública: reaprobala para publicarla"
+    if newspaper_html.READINGS_MARKER in approved_bytes(row):  # segunda defensa, aunque diga public
+        return "contiene lecturas de la conversación: reaprobala para publicarla"
+    return None
+
+
+def leaks_readings(row) -> bool | None:
+    """Si los bytes aprobados llevan lecturas de la conversación. None si la fila no está aprobada o no tiene bytes."""
+    page = approved_bytes(row) if row["status"] == "aprobada" else None
+    return None if page is None else newspaper_html.READINGS_MARKER in page
 
 
 # ------------------------------------------------------------------- base --
@@ -252,23 +279,27 @@ def load_row(con, edition_id: int):
 
 
 def _up_to_date(r) -> bool | None:
-    """Si los bytes aprobados son los que dibujaría hoy la plantilla. Solo informa: lo publicado no cambia hasta reaprobar."""
+    """Si los bytes aprobados son la versión pública que dibujaría hoy la plantilla. Solo informa: lo publicado no
+    cambia hasta reaprobar."""
     if r["status"] != "aprobada" or r["approved_html"] is None:
         return None
     try:
-        return approved_bytes(r) == newspaper_html.render(upgrade(json.loads(r["data"]))).encode("utf-8")
+        return approved_bytes(r) == newspaper_html.render(upgrade(json.loads(r["data"])), public=True).encode("utf-8")
     except ValueError:  # guardada por una versión más nueva: esta no sabe dibujarla, así que no puede compararla
         return None
 
 
 def listing(con, chat_id: int) -> list[dict]:
     """Las ediciones de un grupo, la más reciente primero, sin su contenido ni los bytes aprobados. in_site dice si
-    publish() la escribiría ahora: la publicable más reciente de su rango, y si es aprobada, con su hash intacto."""
-    site = {r["id"] for r in publishable(con, chat_id) if r["status"] == "heredada" or hash_ok(r)}
+    publish() la escribiría ahora: la publicable más reciente de su rango, y si es aprobada, sin blocked_reason(), que
+    va en la fila como el motivo para mostrar. leaks_readings dice si los bytes aprobados llevan lecturas (None si no es
+    aprobada)."""
+    site = {r["id"] for r in publishable(con, chat_id) if blocked_reason(r) is None}
     return [{"id": r["id"], "from": r["date_from"], "to": r["date_to"], "created_at": r["created_at"],
              "editor": json.loads(r["editor"]), "sent": upgrade_sent(json.loads(r["sent"])), "status": r["status"],
              "approval": upgrade_approval(r["approval"]) if r["approval"] else None,
-             "hash_ok": hash_ok(r), "up_to_date": _up_to_date(r), "in_site": r["id"] in site}
+             "hash_ok": hash_ok(r), "up_to_date": _up_to_date(r), "leaks_readings": leaks_readings(r),
+             "blocked_reason": blocked_reason(r), "in_site": r["id"] in site}
             for r in con.execute("""SELECT id, date_from, date_to, created_at, editor, sent, status, approval, approved_html, data
                                     FROM editions WHERE chat_id=? ORDER BY id DESC""", (chat_id,))]
 
@@ -298,8 +329,8 @@ def check_approval(by: str | None, via: str | None, to: str | None = None) -> tu
 
 
 def approve(con, edition_id: int, by: str, via: str, to: str | None = None) -> Approval:
-    """Aprueba una edición (borrador, heredada o aprobada otra vez): la dibuja una sola vez, sin banda, y guarda esos
-    bytes, su sha256, quién, por qué canal, cuándo y adónde. Reaprobar reemplaza bytes y registro (no hay historial).
+    """Aprueba una edición (borrador, heredada o aprobada otra vez): dibuja una sola vez su versión pública, sin
+    banda, y guarda esos bytes, su sha256, quién, por qué canal, cuándo y adónde, con "public": true. Reaprobar reemplaza bytes y registro (no hay historial).
     ValueError si los datos no sirven, si no existe o si está descartada (primero se recupera)."""
     by, via, to = check_approval(by, via, to)
     found = load_row(con, edition_id)
@@ -308,8 +339,8 @@ def approve(con, edition_id: int, by: str, via: str, to: str | None = None) -> A
     row, ed = found
     if row["status"] == "descartada":
         raise ValueError(f"La edición {edition_id} está descartada: recuperala antes de aprobarla.")
-    page = newspaper_html.render(ed).encode("utf-8")
-    approval: Approval = {"hash": page_hash(page), "by": by, "via": via, "at": _now(), "to": to}
+    page = newspaper_html.render(ed, public=True).encode("utf-8")
+    approval: Approval = {"hash": page_hash(page), "by": by, "via": via, "at": _now(), "to": to, "public": True}
     con.execute("UPDATE editions SET status='aprobada', approval=?, approved_html=? WHERE id=?",
                 (json.dumps(approval, ensure_ascii=False), page, edition_id))
     return approval
@@ -344,7 +375,7 @@ def last_covered_day(con, chat_id: int) -> str | None:
 def publishable(con, chat_id: int) -> list:
     """Lo que se publica: la edición más reciente de cada rango entre las aprobadas y las heredadas, del rango más
     nuevo al más viejo. Filas con id, date_from, date_to, status, approval, approved_html y data; quien publica
-    comprueba el hash de las aprobadas (hash_ok). Una aprobada dañada no cede su rango a otra más vieja."""
+    comprueba las aprobadas con blocked_reason(). Una aprobada dañada no cede su rango a otra más vieja."""
     latest: dict[tuple[str, str], object] = {}
     for r in con.execute("""SELECT id, date_from, date_to, status, approval, approved_html, data FROM editions
                             WHERE chat_id=? AND status IN ('aprobada','heredada') ORDER BY id""", (chat_id,)):
