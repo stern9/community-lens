@@ -1,7 +1,7 @@
 // Cliente de la API local. Cada función fija la ruta junto con su tipo de respuesta, de modo que
 // el resto del frontend no puede emparejar un endpoint con un tipo equivocado.
 import type {
-  ActivateRunResult, ApiErrorBody, AuthorsResult, CategoryKey, CategoryMonthly, CategorySummary, Chat, ChatRow,
+  ActivateRunResult, ApiErrorBody, ApproveRequest, AuthorsResult, CategoryKey, CategoryMonthly, CategorySummary, Chat, ChatRow,
   ChatUpdateRequest, Config, ContextResult, DateOrder, DeleteChatResult, ImportCommitRequest, ImportCommitResult,
   ImportPreview, ImportRecord, LabelsRequest, LabelsResult, MergeAuthorRequest, NewspaperEdition, NewspaperPreview,
   NewspaperRequest, NewspaperResult, OkResult, ResourceLibrary, RunListItem, RunStartRequest, RunStartResult,
@@ -124,4 +124,12 @@ export const previewNewspaper = (chatId: number, from: string, to: string, order
   getJson("/api/newspaper/preview?" + qs({ chat_id: chatId, from, to, order, max_articles: maxArticles }));
 export const generateNewspaper = (req: NewspaperRequest): Promise<NewspaperResult> => sendJson("/api/newspaper/editions", req);
 export const getEditions = (chatId: number): Promise<NewspaperEdition[]> => getJson("/api/newspaper/editions?" + qs({ chat_id: chatId }));
-export const editionUrl = (id: number, download = false): string => `/periodico/${id}` + (download ? "?download=true" : "");
+export const approveEdition = (id: number, req: ApproveRequest): Promise<NewspaperEdition> =>
+  sendJson(`/api/newspaper/editions/${id}/approve`, req);
+export const discardEdition = (id: number): Promise<NewspaperEdition> => sendJson(`/api/newspaper/editions/${id}/discard`, {});
+export const restoreEdition = (id: number): Promise<NewspaperEdition> => sendJson(`/api/newspaper/editions/${id}/restore`, {});
+/** `draft` fuerza la banda de borrador (para mandar a revisar una aprobada); sin él la decide el estado. */
+export const editionUrl = (id: number, download = false, draft = false): string => {
+  const q = qs({ download, borrador: draft ? 1 : null });
+  return `/periodico/${id}` + (q ? "?" + q : "");
+};

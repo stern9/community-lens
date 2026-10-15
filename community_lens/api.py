@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import classify, importer, llm, newspaper, report, resources, search, stats
+from . import classify, edition, importer, llm, newspaper, report, resources, search, stats
 from .classify import labels
 from .classify.taxonomy import CATEGORY_KEYS, TAXONOMY_VERSION
 from .classify.taxonomy import public as taxonomy_public
@@ -111,6 +111,12 @@ class NewspaperRequest(_Body):
     consent_chat: bool = False
     order: Literal["recent", "shared"] = "recent"
     max_articles: int = 8
+
+
+class ApproveRequest(_Body):
+    by: str          # quién aprobó y por qué canal: obligatorios, los valida edition.approve (422 si no sirven)
+    via: str
+    to: str | None = None
 
 
 def _chat(con, chat_id: int):
@@ -488,10 +494,45 @@ def newspaper_editions(chat_id: int, con=Depends(db)):
     return newspaper.editions(con, chat_id)
 
 
+def _edition_change(con, edition_id: int, change) -> dict:
+    """Aplica un cambio de estado y devuelve la edición con la forma de una fila de la lista."""
+    if not con.execute("SELECT 1 FROM editions WHERE id=?", (edition_id,)).fetchone():
+        raise HTTPException(404, "Edición no encontrada.")
+    try:
+        change()
+    except ValueError as err:  # datos que no sirven o estado que no admite el cambio
+        raise newspaper.NewspaperError(str(err)) from None
+    return edition.listed(con, edition_id)
+
+
+# Registradas en este orden: aprobar, descartar, recuperar (tests/test_origin.py las recorre así).
+@app.post("/api/newspaper/editions/{edition_id}/approve")
+def newspaper_approve(edition_id: int, body: ApproveRequest, con=Depends(db)):
+    """Aprueba la edición: guarda los bytes que se publican, su hash y quién, por qué canal y adónde."""
+    row = _edition_change(con, edition_id, lambda: edition.approve(con, edition_id, body.by, body.via, body.to))
+    log.info("periódico: edición %s aprobada", edition_id)  # sin el nombre de quien aprueba
+    return row
+
+
+@app.post("/api/newspaper/editions/{edition_id}/discard")
+def newspaper_discard(edition_id: int, con=Depends(db)):
+    row = _edition_change(con, edition_id, lambda: edition.discard(con, edition_id))
+    log.info("periódico: edición %s descartada", edition_id)
+    return row
+
+
+@app.post("/api/newspaper/editions/{edition_id}/restore")
+def newspaper_restore(edition_id: int, con=Depends(db)):
+    row = _edition_change(con, edition_id, lambda: edition.restore(con, edition_id))
+    log.info("periódico: edición %s recuperada como borrador", edition_id)
+    return row
+
+
 @app.get("/periodico/{edition_id}")
-def newspaper_page(edition_id: int, download: bool = False, con=Depends(db)):
-    """La edición como página autocontenida: sin scripts, sin red, solo estilos en línea."""
-    found = newspaper.edition_html(con, edition_id)
+def newspaper_page(edition_id: int, download: bool = False, borrador: bool = False, con=Depends(db)):
+    """La edición como página autocontenida: sin scripts, sin red, solo estilos en línea. Lleva la banda de borrador
+    si la edición es borrador o descartada, o si se pide con ?borrador=1 (para mandar a revisar una aprobada)."""
+    found = newspaper.edition_html(con, edition_id, True if borrador else None)
     if not found:
         raise HTTPException(404, "Edición no encontrada.")
     page, name = found

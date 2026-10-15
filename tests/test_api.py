@@ -1,9 +1,12 @@
 """Pruebas de extremo a extremo por HTTP, sin Jev y sin red."""
+import json
 import re
 from pathlib import Path
 
 import pytest
-from conftest import api_client, fixture_bytes
+from conftest import FIX, api_client, fixture_bytes
+
+from community_lens.db import connect
 
 WEB = Path(__file__).parent.parent / "web"
 
@@ -106,6 +109,13 @@ def test_malformed_bodies_are_rejected_with_422_never_500(client):
     authors = client.get("/api/authors", params={"chat_id": cid}).json()["authors"]
     mid = client.get("/api/search", params={"chat_id": cid}).json()["items"][0]["id"]
     news = {"chat_id": cid, "from": "2026-01-01", "to": "2026-02-28"}
+    con = connect()
+    v1 = json.loads((FIX / "edition_v1.json").read_text(encoding="utf-8"))
+    eid = con.execute("""INSERT INTO editions(chat_id, date_from, date_to, created_at, editor, sent, data, html, status)
+                         VALUES (?,?,?,?,?,?,?,'','borrador')""", (cid, "2026-10-01", "2026-10-03", "2026-10-10T18:00:00Z",
+                                                                  json.dumps(v1["data"]["editor"]), json.dumps(v1["sent"]), json.dumps(v1["data"]))).lastrowid
+    con.close()
+    approve = f"/api/newspaper/editions/{eid}/approve"
     bad = [
         ("/api/classify/runs", {"chat_id": None}), ("/api/classify/runs", {"chat_id": "x"}), ("/api/classify/runs", {}),
         ("/api/classify/runs", {"chat_id": True}), ("/api/classify/runs", {"chat_id": cid, "from": 20260101}),
@@ -126,13 +136,16 @@ def test_malformed_bodies_are_rejected_with_422_never_500(client):
         ("/api/newspaper/editions", {**news, "from": "2026-02-30"}), ("/api/newspaper/editions", {**news, "to": "ayer"}),
         ("/api/newspaper/editions", {**news, "from": "2026-03-01"}), ("/api/newspaper/editions", {**news, "max_articles": 50}),
         ("/api/newspaper/editions", {**news, "max_articles": 2}),
+        (approve, {}), (approve, {"by": "Jaime"}), (approve, {"by": None, "via": "WhatsApp"}), (approve, {"by": 1, "via": "WhatsApp"}),
+        (approve, {"by": "Jaime", "via": ["WhatsApp"]}), (approve, {"by": "Jaime", "via": "WhatsApp", "to": 5}), (approve, ["Jaime", "WhatsApp"]),
+        (approve, {"by": "", "via": "WhatsApp"}), (approve, {"by": "Jaime", "via": "  "}), (approve, {"by": "x" * 201, "via": "WhatsApp"}),
     ]
     for path, body in bad:
         r = client.post(path, json=body)
         assert r.status_code == 422, (path, body, r.status_code, r.text[:200])
     # Nada de lo anterior dejó rastro.
     assert client.get("/api/classify/runs", params={"chat_id": cid}).json() == []
-    assert client.get("/api/newspaper/editions", params={"chat_id": cid}).json() == []
+    assert [(e["id"], e["status"], e["approval"]) for e in client.get("/api/newspaper/editions", params={"chat_id": cid}).json()] == [(eid, "borrador", None)]
     assert all(not a["aliases"] for a in client.get("/api/authors", params={"chat_id": cid}).json()["authors"])
     assert client.get("/api/search", params={"chat_id": cid, "human_only": "true"}).json()["total"] == 0
     assert len(client.get("/api/chats").json()) == 1

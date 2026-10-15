@@ -55,6 +55,30 @@
       },
       "type": "object"
     },
+    "ApproveRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "description": "Quién aprobó y por qué canal: obligatorios, hasta 200 caracteres.",
+          "type": "string"
+        },
+        "to": {
+          "description": "Adónde se publica (opcional).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "via": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "by",
+        "via"
+      ],
+      "type": "object"
+    },
     "AuthorAlias": {
       "additionalProperties": false,
       "properties": {
@@ -2104,9 +2128,53 @@
       ],
       "type": "object"
     },
+    "NewspaperApproval": {
+      "additionalProperties": false,
+      "description": "Registro de la última aprobación. Descartar y recuperar no lo borran; reaprobar lo reemplaza.",
+      "properties": {
+        "at": {
+          "description": "Instante UTC, \"AAAA-MM-DDTHH:MM:SSZ\".",
+          "type": "string"
+        },
+        "by": {
+          "type": "string"
+        },
+        "hash": {
+          "description": "\"sha256:<hex>\" de los bytes que se publican.",
+          "type": "string"
+        },
+        "to": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "via": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hash",
+        "by",
+        "via",
+        "at",
+        "to"
+      ],
+      "type": "object"
+    },
     "NewspaperEdition": {
       "additionalProperties": false,
       "properties": {
+        "approval": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/NewspaperApproval"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "created_at": {
           "description": "Instante UTC, \"AAAA-MM-DDTHH:MM:SSZ\".",
           "type": "string"
@@ -2117,14 +2185,35 @@
         "from": {
           "$ref": "#/definitions/IsoDay"
         },
+        "hash_ok": {
+          "description": "Si los bytes aprobados siguen coincidiendo con su hash; null si no está aprobada.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "id": {
           "type": "number"
+        },
+        "in_site": {
+          "description": "Si publicar ahora la escribiría en el sitio.",
+          "type": "boolean"
         },
         "sent": {
           "$ref": "#/definitions/NewspaperSent"
         },
+        "status": {
+          "$ref": "#/definitions/NewspaperEditionStatus"
+        },
         "to": {
           "$ref": "#/definitions/IsoDay"
+        },
+        "up_to_date": {
+          "description": "Si los bytes aprobados son los que dibujaría hoy la plantilla (si no, reaprobar los actualiza); null si no está aprobada.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "required": [
@@ -2133,9 +2222,24 @@
         "to",
         "created_at",
         "editor",
-        "sent"
+        "sent",
+        "status",
+        "approval",
+        "hash_ok",
+        "up_to_date",
+        "in_site"
       ],
       "type": "object"
+    },
+    "NewspaperEditionStatus": {
+      "description": "Ciclo de vida de una edición. \"heredada\": guardada antes de que existiera la aprobación; se publica sin hash.",
+      "enum": [
+        "borrador",
+        "aprobada",
+        "descartada",
+        "heredada"
+      ],
+      "type": "string"
     },
     "NewspaperFacts": {
       "additionalProperties": false,
@@ -2396,6 +2500,11 @@
         "socials": {
           "type": "number"
         },
+        "status": {
+          "const": "borrador",
+          "description": "Toda edición recién generada queda como borrador: entra al sitio cuando alguien la aprueba.",
+          "type": "string"
+        },
         "tools": {
           "type": "number"
         },
@@ -2411,6 +2520,7 @@
       },
       "required": [
         "id",
+        "status",
         "sent",
         "warnings",
         "articles",

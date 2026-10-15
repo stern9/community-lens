@@ -637,6 +637,8 @@ export interface NewspaperRequest {
 
 export interface NewspaperResult {
   id: number;
+  /** Toda edición recién generada queda como borrador: entra al sitio cuando alguien la aprueba. */
+  status: "borrador";
   sent: NewspaperSent;
   warnings: string[];
   articles: number;
@@ -644,6 +646,20 @@ export interface NewspaperResult {
   tools: number;
   unread: number;
   readings: number;
+}
+
+/** Ciclo de vida de una edición. "heredada": guardada antes de que existiera la aprobación; se publica sin hash. */
+export type NewspaperEditionStatus = "borrador" | "aprobada" | "descartada" | "heredada";
+
+/** Registro de la última aprobación. Descartar y recuperar no lo borran; reaprobar lo reemplaza. */
+export interface NewspaperApproval {
+  /** "sha256:<hex>" de los bytes que se publican. */
+  hash: string;
+  by: string;
+  via: string;
+  /** Instante UTC, "AAAA-MM-DDTHH:MM:SSZ". */
+  at: string;
+  to: string | null;
 }
 
 export interface NewspaperEdition {
@@ -654,6 +670,22 @@ export interface NewspaperEdition {
   created_at: string;
   editor: LlmProvider;
   sent: NewspaperSent;
+  status: NewspaperEditionStatus;
+  approval: NewspaperApproval | null;
+  /** Si los bytes aprobados siguen coincidiendo con su hash; null si no está aprobada. */
+  hash_ok: boolean | null;
+  /** Si los bytes aprobados son los que dibujaría hoy la plantilla (si no, reaprobar los actualiza); null si no está aprobada. */
+  up_to_date: boolean | null;
+  /** Si publicar ahora la escribiría en el sitio. */
+  in_site: boolean;
+}
+
+export interface ApproveRequest {
+  /** Quién aprobó y por qué canal: obligatorios, hasta 200 caracteres. */
+  by: string;
+  via: string;
+  /** Adónde se publica (opcional). */
+  to?: string | null;
 }
 
 // ------------------------------------------------------------ clasificación --

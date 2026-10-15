@@ -74,4 +74,11 @@ export const getReportText = async (s, includeAuthors) => (await request(reportU
 export const previewNewspaper = (chatId, from, to, order, maxArticles) => getJson("/api/newspaper/preview?" + qs({ chat_id: chatId, from, to, order, max_articles: maxArticles }));
 export const generateNewspaper = (req) => sendJson("/api/newspaper/editions", req);
 export const getEditions = (chatId) => getJson("/api/newspaper/editions?" + qs({ chat_id: chatId }));
-export const editionUrl = (id, download = false) => `/periodico/${id}` + (download ? "?download=true" : "");
+export const approveEdition = (id, req) => sendJson(`/api/newspaper/editions/${id}/approve`, req);
+export const discardEdition = (id) => sendJson(`/api/newspaper/editions/${id}/discard`, {});
+export const restoreEdition = (id) => sendJson(`/api/newspaper/editions/${id}/restore`, {});
+/** `draft` fuerza la banda de borrador (para mandar a revisar una aprobada); sin él la decide el estado. */
+export const editionUrl = (id, download = false, draft = false) => {
+    const q = qs({ download, borrador: draft ? 1 : null });
+    return `/periodico/${id}` + (q ? "?" + q : "");
+};
