@@ -33,8 +33,19 @@ Las aplica `community_lens/newspaper.py`, igual para la pantalla y para la líne
 
 - **Rango.** Fechas `AAAA-MM-DD` válidas y en orden. Lo que falte se completa: termina el último día con mensajes
   de participantes (los avisos del sistema posteriores no cuentan) y cubre 7 días contando ese.
+  Con `--continuar` (solo en la línea de comandos) el rango sale de las ediciones ya guardadas: empieza el día siguiente
+  al fin de la última edición del grupo y termina el último día **completo**, el anterior al último día con mensajes
+  (ese suele estar a medias cuando se exporta). Sin ediciones previas, cubre los 7 días que terminan en ese último día
+  completo. Así la frecuencia es simplemente cada cuánto llega una exportación: exportar cada semana, saltarse una o
+  exportar dos veces seguidas no deja días sin cubrir ni días repetidos. Si no hay días nuevos (por ejemplo, la misma
+  exportación otra vez), responde "sin novedad" sin llamar al modelo. Si el rango trae menos de 3 artículos, no
+  genera, lo dice y el material se acumula para la próxima corrida. Hasta que exista la aprobación de ediciones
+  ([#7](https://github.com/stern9/community-lens/issues/7)), "la última edición" es cualquier edición guardada,
+  también una hecha desde la pantalla: esas terminan en el último día con mensajes, que suele estar a medias, así que
+  mezclar las dos formas puede dejar la tarde de ese día sin cubrir.
 - **Artículos.** De 3 a 15 (8 por defecto). Un número fuera de ese rango se rechaza; no se corrige en silencio.
-  Se leen hasta 4 artículos de reserva por si alguno falla. Redes sociales: hasta 6. Sitios: hasta 4.
+  Se leen hasta 4 artículos de reserva por si alguno falla. Redes sociales: hasta 6. Sitios: hasta 4. Si el rango
+  trae más artículos que el máximo, la edición avisa cuántos quedaron fuera.
 - **Modelos.** "Automático" redacta con el primer proveedor configurado que responda (Claude, OpenAI, Gemini, en ese
   orden) y la edición guarda cuál redactó y cuál falló. Un proveedor elegido por nombre no cae a otro.
 - **Lecturas de la conversación.** Envían texto del chat (con seudónimos), así que exigen una confirmación explícita.
@@ -49,17 +60,54 @@ Las aplica `community_lens/newspaper.py`, igual para la pantalla y para la líne
 | Opción | Para qué |
 |---|---|
 | `--archivo` | Exportación a importar antes de generar. Volver a pasar el mismo archivo no duplica nada |
+| `--carpeta` | En lugar de `--archivo`: importa la exportación `.zip` o `.txt` más nueva (por fecha de modificación) de esa carpeta, sin entrar en subcarpetas ni mirar archivos ocultos, e imprime cuál eligió. No borra ni mueve nada. Exige `--grupo-id` o `--grupo` |
 | `--grupo` / `--grupo-id` | Grupo por nombre exacto o por id. Si dos grupos se llaman igual, el comando se detiene y los lista: hay que usar `--grupo-id` |
 | `--dias`, `--desde`, `--hasta` | Rango de la edición (ver "Reglas") |
+| `--continuar` | Cubre desde el día siguiente a la última edición hasta el último día completo; "sin novedad" si no hay días nuevos y no genera con menos de 3 artículos (ver "Reglas"). No se combina con `--dias`, `--desde` ni `--hasta` |
 | `--articulos`, `--orden` | Máximo de artículos y prioridad (`recent` o `shared`) |
 | `--modelo` | `anthropic`, `openai` o `gemini`; sin esta opción, automático |
 | `--lecturas … --confirmo-enviar-chat` | Lecturas de la conversación (`todos` o una lista); sin la confirmación no se envía nada |
 | `--salida` | Carpeta del sitio estático: `index.html` y `ediciones/<desde>_a_<hasta>.html` (la edición más reciente de cada rango) |
 | `--solo-publicar` | No genera: reescribe el sitio con las ediciones guardadas |
+| `--json` | Imprime en la salida estándar un solo objeto JSON con el resultado (`status`, `detail`, `import`, `edition` con lo enviado, `warnings`, `site`); los mensajes para personas van a la salida de error. Nunca incluye texto de mensajes. Con código 2 no hay JSON: argparse rechaza los argumentos antes de que exista un resultado |
 
-Termina con código 0 si todo salió bien, 1 con un mensaje si algo no se pudo (fecha inválida, grupo ambiguo, sin
-modelo configurado…) y 2 si los argumentos no se entienden. Antes de publicar en un sitio abierto, tené presente
-que las lecturas resumen una conversación privada.
+Códigos de salida, para que un guion decida sin leer los mensajes:
+
+- **0**: se generó la edición (o, con `--solo-publicar`, se escribió el sitio).
+- **1**: algo falló y hay que mirar: fecha inválida, grupo ambiguo, sin modelo configurado, falló el modelo, archivo
+  inexistente, carpeta sin exportaciones, carpeta sin permisos, base bloqueada… Si falló al escribir el sitio, la
+  edición ya quedó guardada y el mensaje lo dice: se publica con `--solo-publicar`.
+- **2**: argumentos mal usados o contradictorios (`--continuar` con un rango explícito, `--carpeta` con `--archivo` o
+  sin `--grupo-id` ni `--grupo`, `--solo-publicar` sin `--salida` o con `--continuar`). No toca la base y, aun con
+  `--json`, no imprime JSON: solo el mensaje de uso en la salida de error.
+- **3**: nada que publicar esta vez: "sin novedad" (no hay días nuevos) o material insuficiente. Se imprime como aviso
+  y **no reescribe el sitio** aunque se pase `--salida`; para reescribirlo igual está `--solo-publicar`.
+
+Antes de publicar en un sitio abierto, tené presente que las lecturas resumen una conversación privada.
+
+### Programarlo
+
+Dejá cada exportación en una carpeta (AirDrop, iCloud, correo) y corré, cada cierto tiempo:
+
+```bash
+.venv/bin/python -m community_lens periodico --carpeta <dir> --grupo-id N --continuar --salida sitio/ --json
+```
+
+Con 0, el guion sube `sitio/`; con 3, no hace nada (la misma exportación otra vez termina en "sin novedad" sin llamar
+al modelo, y el material insuficiente se acumula para la próxima); con 1, avisa a alguien. Un guion programado fija
+siempre `--grupo-id`: sin grupo, el grupo sale del nombre del archivo y, si una exportación llega con otro nombre,
+se crearía un grupo nuevo; un nombre con `--grupo` deja de servir si otro grupo pasa a llamarse igual.
+
+Con cron (`crontab -e`), los lunes a las 8, desde la carpeta del repositorio:
+
+```
+0 8 * * 1  cd <repo> && .venv/bin/python -m community_lens periodico --carpeta <dir> --grupo-id N --continuar --salida sitio/ --json >> periodico.jsonl 2>> periodico.log
+```
+
+En macOS, `launchd` hace lo mismo con un `.plist` en `~/Library/LaunchAgents/`. `ProgramArguments` no pasa por un
+shell, así que no interpreta `cd … &&` ni redirecciones: ponele `WorkingDirectory` con la ruta del repositorio (o rutas
+absolutas en cada argumento), `StandardOutPath` y `StandardErrorPath` para los dos archivos, y `StartCalendarInterval`
+para el horario.
 
 ## Formato guardado
 

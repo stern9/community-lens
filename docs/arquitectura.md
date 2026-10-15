@@ -100,7 +100,7 @@ Sin red, con una base temporal por prueba y sin leer el `.env` de quien las corr
 | `test_resources.py` | Agrupación de documentos por versión, reenvíos de versiones viejas, identidad de un enlace |
 | `test_stats_search.py` | Totales y denominadores, meses parciales, enlaces vs. mensajes con enlaces, FTS y filtros, contexto, reporte solo agregado y escapado |
 | `test_classify.py` | Reglas, registro de ejecuciones, correcciones humanas sin sobrescribir, clasificados iguales en resumen y mensual, ejecución que falla no queda en curso, bloqueos y forma de la solicitud de Jev |
-| `test_newspaper.py` | Tipos de enlace, vista previa sin red ni modelos, seudonimización, enlaces solo del chat, consentimiento para lecturas, modo automático, `.zip`, línea de comandos (rango por defecto, grupos homónimos, validación), ediciones guardadas con el formato anterior |
+| `test_newspaper.py` | Tipos de enlace, vista previa sin red ni modelos, seudonimización, enlaces solo del chat, consentimiento para lecturas, modo automático, `.zip`, línea de comandos (rango por defecto, grupos homónimos, validación, `--continuar`, códigos de salida, carpeta, salida JSON), ediciones guardadas con el formato anterior |
 | `test_newspaper_net.py` | Descarga de páginas: direcciones no públicas, cada salto de una redirección, límite de tamaño, errores, fichas de redes sociales |
 | `test_llm.py` | Qué se envía a Anthropic, OpenAI y Gemini, traducción de errores sin exponer la key, respuestas mal formadas |
 | `test_contract.py` | Respuestas y cuerpos de solicitud coinciden con los tipos de TypeScript; el TypeScript compila en modo estricto y `web/dist` está al día |
