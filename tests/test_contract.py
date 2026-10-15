@@ -50,7 +50,7 @@ def test_every_object_type_is_closed():
 def test_request_bodies_declare_the_same_fields_as_typescript():
     """Cada cuerpo de solicitud tiene los mismos campos en types.ts y en los modelos de api.py."""
     from community_lens import api
-    for name in ("ChatUpdateRequest", "ImportCommitRequest", "MergeAuthorRequest", "LabelsRequest", "RunStartRequest", "NewspaperRequest"):
+    for name in ("ChatUpdateRequest", "ImportCommitRequest", "MergeAuthorRequest", "LabelsRequest", "RunStartRequest", "NewspaperRequest", "ApproveRequest"):
         model = getattr(api, name)
         fields = {f.alias or k for k, f in model.model_fields.items()}
         assert fields == set(SCHEMA["definitions"][name]["properties"]), name
@@ -212,7 +212,8 @@ def test_typescript_compiles_and_committed_build_is_current(tmp_path):
 
 @pytest.mark.skipif(not shutil.which("node"), reason="requiere Node (solo para desarrollar el frontend)")
 def test_newspaper_view_completes_cleared_dates():
-    """La vista compilada pide otra vista previa al borrar una fecha y genera con el rango resuelto."""
+    """La vista compilada pide otra vista previa al borrar una fecha y genera con el rango resuelto; la lista de ediciones
+    guardadas muestra cada estado, oculta las descartadas hasta pedirlas y aprueba desde la fila."""
     r = subprocess.run(["node", "--experimental-vm-modules", "tests/frontend/periodico.mjs"], cwd=ROOT,
                        capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stdout + r.stderr

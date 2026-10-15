@@ -68,7 +68,9 @@ Las dos formas se pueden importar en el mismo grupo: un mensaje con adjunto se r
    Con varias keys, "Automático" redacta con la primera de esa lista y, si falla, pasa a la siguiente.
 2. En **Generar periódico** elegí el rango. Los atajos ("Última semana", etc.) cuentan hacia atrás desde el último
    día con mensajes del grupo, no desde hoy. Revisá qué enlaces entran y qué saldría de tu máquina, y generá.
-3. La edición queda guardada: se abre en el navegador o se descarga como un solo archivo HTML.
+3. La edición queda guardada como **borrador**: se abre en el navegador (con la banda "Borrador, no compartir") o se
+   descarga como un solo archivo HTML. Revisala y aprobala en **Ediciones guardadas** (quién aprueba y por qué canal)
+   antes de publicarla: el sitio solo lleva ediciones aprobadas.
 
 Sin pantalla, para automatizarlo:
 
@@ -80,8 +82,10 @@ Importa la exportación, genera la edición de los 7 días que terminan en el ú
 `sitio/index.html` más una página por edición en `sitio/ediciones/`. Es solo HTML: se sube a cualquier hosting
 estático. Lo que subás es la edición completa: si generaste lecturas de la conversación, van incluidas. `.venv/bin/python -m community_lens periodico --help` lista todas las opciones (rango, modelo, lecturas de la
 conversación, publicar sin generar). Para programarlo, `--carpeta` toma la exportación más nueva de una carpeta,
-`--continuar` cubre solo los días posteriores a la última edición, y el código de salida distingue "nada nuevo" (3)
-de "falló" (1). Más detalle en [docs/periodico.md](docs/periodico.md).
+`--continuar` cubre solo los días posteriores a la última edición aprobada, y el código de salida distingue "nada
+nuevo" (3) de "falló" (1). La edición generada queda como borrador y no entra al sitio: `--borrador RUTA.html` escribe
+su vista previa para revisarla, y `--edicion N --aprobar --aprobado-por … --canal …` la aprueba y, con `--salida`, la
+publica. Más detalle en [docs/periodico.md](docs/periodico.md).
 
 ## Privacidad
 

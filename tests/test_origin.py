@@ -6,11 +6,11 @@ import json
 import re
 
 import pytest
-from conftest import BASE_URL, FakeLLM, FakeNet, api_client, fixture_bytes
+from conftest import BASE_URL, FIX, FakeLLM, FakeNet, api_client, fixture_bytes
 from fastapi.routing import APIRoute
 from starlette.routing import Mount
 
-from community_lens import llm, newspaper
+from community_lens import edition, llm, newspaper
 from community_lens.api import app
 from community_lens.config import settings
 from community_lens.db import connect
@@ -151,7 +151,8 @@ def client(monkeypatch):
 @pytest.fixture
 def seeded(client):
     """Una base donde cada ruta que modifica tendría algo que cambiar: un alias unido, dos ejecuciones terminadas
-    (la vigente es la segunda) y una vista previa de importación sin confirmar."""
+    (la vigente es la segunda), una vista previa de importación sin confirmar y una edición del periódico en borrador
+    (aprobarla, descartarla y recuperarla la cambian, en ese orden)."""
     pv = client.post("/api/imports/preview", params={"filename": "ios_mdy_24h.txt"}, content=fixture_bytes("ios_mdy_24h.txt")).json()
     cid = client.post("/api/imports/commit", json={"token": pv["token"], "file_name": "x.txt", "date_order": "MDY"}).json()["chat_id"]
     authors = client.get("/api/authors", params={"chat_id": cid}).json()["authors"]
@@ -162,7 +163,18 @@ def seeded(client):
     assert [r["id"] for r in client.get("/api/classify/runs", params={"chat_id": cid}).json() if r["active"]] == [second]
     mid = client.get("/api/search", params={"chat_id": cid}).json()["items"][0]["id"]
     token = client.post("/api/imports/preview", params={"filename": "overlap_a.txt"}, content=fixture_bytes("overlap_a.txt")).json()["token"]
-    return {"chat_id": cid, "author_id": alias, "into": main, "third": third, "run_id": first, "message_id": mid, "token": token}
+    v1 = json.loads((FIX / "edition_v1.json").read_text(encoding="utf-8"))
+    data = edition.upgrade(v1["data"])
+    con = connect()
+    try:
+        eid = con.execute("""INSERT INTO editions(chat_id, date_from, date_to, created_at, editor, sent, data, html, status)
+                             VALUES (?,?,?,?,?,?,?,'','borrador')""",
+                          (cid, data["from"], data["to"], "2026-10-10T18:00:00Z", json.dumps(data["editor"]), json.dumps(v1["sent"]),
+                           json.dumps(data, ensure_ascii=False))).lastrowid
+    finally:
+        con.close()
+    return {"chat_id": cid, "author_id": alias, "into": main, "third": third, "run_id": first, "message_id": mid, "token": token,
+            "edition_id": eid}
 
 
 def snapshot():
@@ -264,6 +276,7 @@ def attack_bodies(s):
         "/api/authors/{author_id}/merge": {"json": {"into": s["third"]}},
         "/api/messages/{message_id}/labels": {"json": {"categories": ["anuncio"]}},
         "/api/classify/runs": {"json": {"chat_id": s["chat_id"], "provider": "rules"}},
+        "/api/newspaper/editions/{edition_id}/approve": {"json": {"by": "Jaime", "via": "WhatsApp"}},
     }
 
 
@@ -326,7 +339,8 @@ def test_every_registered_route_checks_where_the_request_comes_from(client, seed
             before = after
     assert changed >= {(t, "POST") for t in bodies if t != "/api/chats/{chat_id}"} | {
         ("/api/authors/{author_id}/unmerge", "POST"), ("/api/classify/runs/{run_id}/activate", "POST"),
-        ("/api/chats/{chat_id}", "PATCH"), ("/api/chats/{chat_id}", "DELETE")}, changed
+        ("/api/chats/{chat_id}", "PATCH"), ("/api/chats/{chat_id}", "DELETE"),
+        ("/api/newspaper/editions/{edition_id}/discard", "POST"), ("/api/newspaper/editions/{edition_id}/restore", "POST")}, changed
 
 
 def test_the_frontend_only_talks_to_its_own_origin():

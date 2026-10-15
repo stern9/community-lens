@@ -45,6 +45,15 @@ def fake_model(provider, system, user):
     return json.dumps(fake_json(provider, system, user), ensure_ascii=False)
 
 
+def approve_drafts(con) -> list[int]:
+    """Aprueba los borradores pendientes, como haría quien administra el grupo entre una corrida y la siguiente."""
+    from community_lens import edition
+    ids = [r["id"] for r in con.execute("SELECT id FROM editions WHERE status='borrador' ORDER BY id")]
+    for i in ids:
+        edition.approve(con, i, "Prueba", "pytest", None)
+    return ids
+
+
 @pytest.fixture
 def no_network(monkeypatch):
     """Internet y los proveedores de modelos, de mentira. Devuelve (red, transporte) para mirar qué se pidió."""
@@ -353,12 +362,18 @@ def test_headless_command_imports_generates_and_publishes(tmp_path, no_network, 
     assert cli.periodico(args) == 0
     out = capsys.readouterr().out
     assert "2026-10-01 a 2026-10-03" in out and "nada del chat" in out
-    assert (site / "index.html").exists() and (site / "ediciones" / "2026-10-01_a_2026-10-03.html").exists()
-    index = (site / "index.html").read_text()
-    assert 'href="ediciones/2026-10-01_a_2026-10-03.html"' in index and "<script" not in index
-    # Correrlo otra vez con el mismo archivo no duplica mensajes y deja una sola página por rango.
+    # La edición recién generada es un borrador: el sitio se escribe, pero sin ella.
+    assert (site / "index.html").exists() and not (site / "ediciones" / "2026-10-01_a_2026-10-03.html").exists()
+    from community_lens.db import connect
+    con = connect()
+    assert len(approve_drafts(con)) == 1
+    con.close()
+    # Correrlo otra vez con el mismo archivo no duplica mensajes y deja una sola página por rango: la aprobada.
     assert cli.periodico(args) == 0
     assert "ya estaba importado" in capsys.readouterr().out
+    assert (site / "ediciones" / "2026-10-01_a_2026-10-03.html").exists()
+    index = (site / "index.html").read_text()
+    assert 'href="ediciones/2026-10-01_a_2026-10-03.html"' in index and "<script" not in index
     assert len(list((site / "ediciones").glob("*.html"))) == 1
     # Las lecturas sin la confirmación explícita se rechazan antes de enviar nada.
     assert cli.periodico(["--grupo", "Demo", "--dias", "3", "--lecturas", "anthropic"]) == 1
@@ -414,8 +429,9 @@ def test_edition_saved_with_the_previous_format_still_opens_and_publishes(client
     listed = c.get("/api/newspaper/editions", params={"chat_id": cid}).json()
     check("NewspaperEdition", listed, array=True)
     assert [e["id"] for e in listed] == [b, a] and listed[0]["sent"]["pages_tried"] == []
-    files = newspaper.publish(con, cid, "Demo", tmp_path / "sitio")
-    assert files == ["index.html", "ediciones/2026-10-01_a_2026-10-03.html", "ediciones/2026-09-01_a_2026-09-07.html"]
+    site = newspaper.publish(con, cid, "Demo", tmp_path / "sitio")
+    files = site["files"]
+    assert site["skipped"] == [] and files == ["index.html", "ediciones/2026-10-01_a_2026-10-03.html", "ediciones/2026-09-01_a_2026-09-07.html"]
     assert (tmp_path / "sitio" / files[1]).read_text(encoding="utf-8") == page.text
     index = (tmp_path / "sitio" / "index.html").read_text(encoding="utf-8")
     assert "Del 1 al 3 de octubre de 2026 · 2 artículos" in index and "Del 1 al 7 de septiembre de 2026" in index
@@ -480,6 +496,9 @@ def _covered(con, cid) -> list[str]:
     return sorted(days)
 
 
+APPROVE_NOW = ("--aprobar", "--aprobado-por", "Prueba", "--canal", "pytest")  # aprobar al vuelo: solo en pruebas o a mano
+
+
 def _run(tmp_path, last: str, *extra: str, **kw) -> int:
     from community_lens import cli
     f = tmp_path / f"export_{last}.txt"
@@ -495,25 +514,34 @@ def test_continue_range_follows_the_last_edition(con):
     # Sin ediciones: 7 días que terminan el día anterior al último con mensajes (ese está a medias).
     assert newspaper.continue_range(con, cid) == ("2026-10-13", "2026-10-19")
     edition.save(con, cid, {"from": "2026-10-01", "to": "2026-10-09", "editor": {}}, {})
-    edition.save(con, cid, {"from": "2026-10-03", "to": "2026-10-05", "editor": {}}, {})  # cuenta la que llega más lejos
+    edition.save(con, cid, {"from": "2026-10-03", "to": "2026-10-05", "editor": {}}, {})
+    # Un borrador no cuenta: todavía no se publicó.
+    assert newspaper.continue_range(con, cid) == ("2026-10-13", "2026-10-19")
+    con.execute("UPDATE editions SET status='aprobada'")  # cuenta la que llega más lejos
     assert newspaper.continue_range(con, cid) == ("2026-10-10", "2026-10-19")
-    edition.save(con, cid, {"from": "2026-10-10", "to": "2026-10-19", "editor": {}}, {})
+    last = edition.save(con, cid, {"from": "2026-10-10", "to": "2026-10-19", "editor": {}}, {})
+    con.execute("UPDATE editions SET status='aprobada' WHERE id=?", (last,))
     with pytest.raises(newspaper.NoNews, match="Sin novedad: la última edición ya cubre hasta el 2026-10-19"):
+        newspaper.continue_range(con, cid)
+    # Una descartada reabre su período; una heredada (anterior a la aprobación) cuenta como publicada.
+    edition.discard(con, last)
+    assert newspaper.continue_range(con, cid) == ("2026-10-10", "2026-10-19")
+    con.execute("UPDATE editions SET status='heredada' WHERE id=?", (last,))
+    with pytest.raises(newspaper.NoNews):
         newspaper.continue_range(con, cid)
 
 
 def test_continue_leaves_no_gaps_or_repeats(no_network, setenv, tmp_path, con, capsys):
     setenv(ANTHROPIC_API_KEY="k-demo")
-    # Una semana, otra, se salta una, y dos exportaciones seguidas.
-    assert _run(tmp_path, "2026-10-08") == 0
-    assert _run(tmp_path, "2026-10-15") == 0
-    assert _run(tmp_path, "2026-10-29") == 0
+    # Una semana, otra, se salta una, y dos exportaciones seguidas. Cada corrida aprueba al vuelo lo que genera.
+    for last in ("2026-10-08", "2026-10-15", "2026-10-29"):
+        assert _run(tmp_path, last, *APPROVE_NOW) == 0
     out = capsys.readouterr().out
     assert "(2026-10-01 a 2026-10-07)" in out and "(2026-10-08 a 2026-10-14)" in out and "(2026-10-15 a 2026-10-28)" in out
     # Al día siguiente solo hay un día completo nuevo con 2 artículos: no alcanza y queda para la próxima.
     assert _run(tmp_path, "2026-10-30") == 3
     assert "hacen falta 3" in capsys.readouterr().out
-    assert _run(tmp_path, "2026-10-31") == 0
+    assert _run(tmp_path, "2026-10-31", *APPROVE_NOW) == 0
     assert "(2026-10-29 a 2026-10-30)" in capsys.readouterr().out
     cid = newspaper.find_chat(con, "Semanal")["id"]
     days = _covered(con, cid)
@@ -524,6 +552,7 @@ def test_same_export_twice_does_not_call_the_model_again(no_network, setenv, tmp
     setenv(ANTHROPIC_API_KEY="k-demo")
     net, models = no_network
     assert _run(tmp_path, "2026-10-08") == 0
+    approve_drafts(con)
     calls, pages = len(models.requests), len(net.requests)
     assert calls > 0 and pages > 0
     capsys.readouterr()
@@ -584,6 +613,7 @@ def test_nothing_to_publish_exits_3_and_leaves_the_site_alone(no_network, setenv
     assert "Aviso: El rango trae 2 artículo(s)" in io.out and "No se pudo" not in io.err + io.out
     assert not (site / "index.html").exists()
     assert _run(tmp_path, "2026-10-08") == 0
+    approve_drafts(con)
     capsys.readouterr()
     assert _run(tmp_path, "2026-10-08", "--salida", str(site)) == 3  # sin novedad
     io = capsys.readouterr()
@@ -627,6 +657,7 @@ def test_folder_twice_with_continue_is_idempotent(no_network, setenv, tmp_path, 
     models = no_network[1]
     args = ["--carpeta", str(_folder(tmp_path, "2026-10-08")), "--grupo", "Semanal", "--orden-fecha", "MDY", "--continuar"]
     assert cli.periodico(args) == 0
+    approve_drafts(con)
     calls = len(models.requests)
     cid = newspaper.find_chat(con, "Semanal")["id"]
     capsys.readouterr()
@@ -677,11 +708,13 @@ def test_json_output(no_network, setenv, tmp_path, con, capsys):
     ed = res["edition"]
     assert (ed["from"], ed["to"], ed["readings"]) == ("2026-10-01", "2026-10-07", 0) and ed["articles"] > 0
     assert ed["sent"]["pages_to"] == "Claude" and ed["sent"]["chat_messages"] == 0 and ed["sent"] == newspaper.editions(con, cid)[0]["sent"]
-    assert res["site"] == {"dir": str(site), "files": 2} and isinstance(res["warnings"], list)
+    assert res["site"] == {"dir": str(site), "files": 1, "skipped": []} and isinstance(res["warnings"], list)  # el borrador no entra al sitio
+    assert (ed["status"], ed["approval"], ed["in_site"]) == ("borrador", None, False) and "quedó como borrador" in err
     assert "Exportación más nueva de la carpeta" in err and "Edición" in err and "Sitio escrito" in err
     # Ninguna clave trae texto del chat: ni enlaces ni nombres.
     out = json.dumps(res)
     assert "example.org" not in out and "Ana" not in out and "lean" not in out
+    assert approve_drafts(con) == [ed["id"]]
     code, res, _ = run("--carpeta", str(d), "--grupo-id", str(cid), "--orden-fecha", "MDY", "--continuar")
     assert (code, res["status"], res["edition"]) == (3, "sin_novedad", None) and res["import"]["status"] == "duplicate"
     assert res["detail"].startswith("Sin novedad")
@@ -704,7 +737,8 @@ def test_site_folder_that_is_a_file_fails_cleanly_and_says_the_edition_was_saved
     io = capsys.readouterr()
     out = json.loads(io.out)
     assert out["status"] == "error" and out["edition"]["id"] and out["site"] is None
-    assert "quedó guardada" in out["detail"] and "--solo-publicar" in out["detail"] and "No se pudo:" in io.err
+    eid = out["edition"]["id"]
+    assert f"quedó guardada como borrador: para aprobarla y publicarla corré --edicion {eid} --aprobar" in out["detail"] and "No se pudo:" in io.err
     assert len(newspaper.editions(con, newspaper.find_chat(con, "Semanal")["id"])) == 1
 
 
@@ -714,3 +748,456 @@ def test_solo_publicar_needs_salida_and_excludes_continuar(client, capsys):
         with pytest.raises(SystemExit) as exit_:
             cli.periodico(args)
         assert exit_.value.code == 2 and "necesita --salida y no se combina con --continuar" in capsys.readouterr().err
+
+
+# ------------------------------------------------- borrador, aprobación y publicación (#7) --
+
+APPROVE = {"by": "Jaime", "via": "WhatsApp"}
+BAND = '<p class="fp-draft">Borrador, no compartir</p>'  # la regla .fp-draft de la hoja va en toda página; la banda, no
+
+
+def _generate(c, cid, d_from="2026-10-01", d_to="2026-10-03") -> int:
+    r = c.post("/api/newspaper/editions", json={"chat_id": cid, "from": d_from, "to": d_to, "editor": "anthropic"})
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
+
+
+def _row(c, cid, eid) -> dict:
+    """La edición tal como la muestra la lista."""
+    rows = c.get("/api/newspaper/editions", params={"chat_id": cid}).json()
+    check("NewspaperEdition", rows, array=True)
+    return next(r for r in rows if r["id"] == eid)
+
+
+def _filename(resp) -> str:
+    return re.search(r'filename="([^"]+)"', resp.headers["content-disposition"])[1]
+
+
+# El CREATE TABLE de editions antes de #7: sin status, approval ni approved_html.
+OLD_EDITIONS = """CREATE TABLE editions (
+    id INTEGER PRIMARY KEY, chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE, date_from TEXT NOT NULL,
+    date_to TEXT NOT NULL, created_at TEXT NOT NULL, editor TEXT NOT NULL, sent TEXT NOT NULL, data TEXT NOT NULL, html TEXT NOT NULL)"""
+
+
+@pytest.mark.parametrize("cut", [False, True], ids=["vieja", "migracion_cortada"])
+def test_old_database_gains_the_columns_and_its_editions_stay_published(tmp_path, no_network, cut):
+    """Una base de antes de la aprobación: sus ediciones quedan "heredada", se siguen publicando como siempre, sin
+    banda, y cuentan para --continuar. Con cut, un proceso anterior alcanzó a agregar solo la primera columna."""
+    import sqlite3
+
+    from conftest import FIX, do_import
+
+    from community_lens import db, edition
+    from community_lens.config import settings
+    raw = sqlite3.connect(settings().db_path)
+    raw.execute(OLD_EDITIONS)
+    if cut:
+        raw.execute("ALTER TABLE editions ADD COLUMN status TEXT NOT NULL DEFAULT 'heredada'")
+    raw.executescript(db.SCHEMA)  # el IF NOT EXISTS saltea editions y crea todo lo demás
+    raw.execute("INSERT INTO chats(id, name, timezone, created_at) VALUES (1, 'Demo', 'America/Costa_Rica', '2026-10-01T00:00:00Z')")
+    v1 = json.loads((FIX / "edition_v1.json").read_text(encoding="utf-8"))
+    data = edition.upgrade(v1["data"])
+    eid = raw.execute("INSERT INTO editions(chat_id, date_from, date_to, created_at, editor, sent, data, html) VALUES (1,?,?,?,?,?,?,'')",
+                      (data["from"], data["to"], "2026-10-10T18:00:00Z", json.dumps(data["editor"]), json.dumps(v1["sent"]),
+                       json.dumps(data, ensure_ascii=False))).lastrowid
+    raw.commit()
+    raw.close()
+
+    con = db.connect()
+    assert {"status", "approval", "approved_html"} <= {r["name"] for r in con.execute("PRAGMA table_info(editions)")}
+    assert tuple(con.execute("SELECT status, approval, approved_html FROM editions").fetchone()) == ("heredada", None, None)
+    site = newspaper.publish(con, 1, "Demo", tmp_path / "sitio")
+    assert site == {"files": ["index.html", "ediciones/2026-10-01_a_2026-10-03.html"], "skipped": []}
+    published = (tmp_path / "sitio" / site["files"][1]).read_text(encoding="utf-8")
+    with api_client() as c:
+        page = c.get(f"/periodico/{eid}")
+        assert page.status_code == 200 and page.text == published and 'class="fp-draft"' not in page.text and "BORRADOR" not in page.text
+        assert _filename(c.get(f"/periodico/{eid}", params={"download": "true"})) == "periodico_2026-10-01_a_2026-10-03.html"
+        row = _row(c, 1, eid)
+        assert {k: row[k] for k in ("status", "approval", "hash_ok", "up_to_date", "in_site")} == {
+            "status": "heredada", "approval": None, "hash_ok": None, "up_to_date": None, "in_site": True}
+    do_import(con, None, data=CHAT, file_name="chat.txt", date_order="MDY", chat_id=1)
+    with pytest.raises(newspaper.NoNews):  # la heredada cubre hasta el 3 de octubre, el último día completo
+        newspaper.continue_range(con, 1)
+    # Reabrir no cambia nada.
+    before = [tuple(r) for r in con.execute("SELECT * FROM editions")]
+    con.close()
+    con = db.connect()
+    assert [tuple(r) for r in con.execute("SELECT * FROM editions")] == before
+    con.close()
+
+
+def test_a_draft_is_not_published_and_its_page_says_so(client, tmp_path):
+    from community_lens import cli
+    from community_lens.db import connect
+    c, cid = client
+    res = c.post("/api/newspaper/editions", json={"chat_id": cid, "from": "2026-10-01", "to": "2026-10-03", "editor": "anthropic"}).json()
+    check("NewspaperResult", res)
+    eid = res["id"]
+    assert res["status"] == "borrador" and _row(c, cid, eid)["status"] == "borrador" and not _row(c, cid, eid)["in_site"]
+    con = connect()
+    site = newspaper.publish(con, cid, "Demo", tmp_path / "sitio")
+    assert site == {"files": ["index.html"], "skipped": []} and "Todavía no hay ediciones" in (tmp_path / "sitio" / "index.html").read_text()
+    assert cli.periodico(["--grupo-id", str(cid), "--solo-publicar", "--salida", str(tmp_path / "otro")]) == 0
+    assert list((tmp_path / "otro" / "ediciones").iterdir()) == []
+    # Su página y su descarga dicen que es un borrador, sin scripts ni estilos en atributos.
+    page = c.get(f"/periodico/{eid}").text
+    assert page.count(BAND) == 1 and "<title>BORRADOR · Lo que se compartió" in page and 'class="fp-wrap">\n' + BAND in page
+    assert "style=" not in page and "<script" not in page and ".fp-draft{position:sticky" in page
+    assert _filename(c.get(f"/periodico/{eid}", params={"download": "true"})) == "borrador_2026-10-01_a_2026-10-03.html"
+
+    # Aprobada por la pantalla, entra al sitio sin banda: lo publicado es exactamente lo que se guardó al aprobar.
+    body = {**APPROVE, "to": "sitio público"}
+    check("ApproveRequest", body)
+    r = c.post(f"/api/newspaper/editions/{eid}/approve", json=body)
+    assert r.status_code == 200, r.text
+    row = r.json()
+    check("NewspaperEdition", row)
+    assert row == _row(c, cid, eid) and row["status"] == "aprobada" and (row["hash_ok"], row["up_to_date"], row["in_site"]) == (True, True, True)
+    page = c.get(f"/periodico/{eid}").text
+    assert 'class="fp-draft"' not in page and "BORRADOR" not in page
+    assert _filename(c.get(f"/periodico/{eid}", params={"download": "true"})) == "periodico_2026-10-01_a_2026-10-03.html"
+    site = newspaper.publish(con, cid, "Demo", tmp_path / "sitio")
+    assert site == {"files": ["index.html", "ediciones/2026-10-01_a_2026-10-03.html"], "skipped": []}
+    written = (tmp_path / "sitio" / site["files"][1]).read_bytes()
+    assert written == con.execute("SELECT approved_html FROM editions WHERE id=?", (eid,)).fetchone()[0] == page.encode()
+    assert not any('class="fp-draft"' in f.read_text() for f in (tmp_path / "sitio").rglob("*.html"))
+    # ?borrador=1 la manda a revisar con banda sin cambiarle el estado.
+    forced = c.get(f"/periodico/{eid}", params={"borrador": 1})
+    assert BAND in forced.text and "<title>BORRADOR · " in forced.text
+    assert _filename(c.get(f"/periodico/{eid}", params={"borrador": 1, "download": "true"})) == "borrador_2026-10-01_a_2026-10-03.html"
+    assert _row(c, cid, eid) == row
+    con.close()
+
+
+def test_published_bytes_are_the_approved_ones_and_damage_is_reported(client, tmp_path, monkeypatch, capsys):
+    from community_lens import cli, newspaper_html
+    from community_lens.db import connect
+    c, cid = client
+    con = connect()
+    site_dir = tmp_path / "sitio"
+    page_file = site_dir / "ediciones" / "2026-10-01_a_2026-10-03.html"
+    a = _generate(c, cid)
+    assert c.post(f"/api/newspaper/editions/{a}/approve", json=APPROVE).status_code == 200
+    approved = con.execute("SELECT approved_html FROM editions WHERE id=?", (a,)).fetchone()[0]
+    # Plantilla nueva: el sitio sigue publicando los bytes aprobados y la lista avisa que reaprobar los actualiza.
+    monkeypatch.setattr(newspaper_html, "CSS", newspaper_html.CSS + "\n.fp-nueva{color:red}")
+    assert newspaper.publish(con, cid, "Demo", site_dir)["skipped"] == []
+    assert page_file.read_bytes() == approved and b"fp-nueva" not in approved
+    assert "fp-nueva" in c.get(f"/periodico/{a}").text  # la página de la app se dibuja con la plantilla de hoy
+    row = _row(c, cid, a)
+    assert (row["hash_ok"], row["up_to_date"], row["in_site"]) == (True, False, True)
+    row = c.post(f"/api/newspaper/editions/{a}/approve", json=APPROVE).json()
+    assert (row["hash_ok"], row["up_to_date"], row["in_site"]) == (True, True, True)
+    newspaper.publish(con, cid, "Demo", site_dir)
+    assert b"fp-nueva" in page_file.read_bytes()
+
+    # Dos aprobadas del mismo rango: se publica solo la más nueva.
+    b = _generate(c, cid)
+    assert c.post(f"/api/newspaper/editions/{b}/approve", json=APPROVE).status_code == 200
+    assert (_row(c, cid, a)["in_site"], _row(c, cid, b)["in_site"]) == (False, True)
+    # publish() borra de ediciones/ solo las páginas de rango que no escribió.
+    (site_dir / "ediciones" / "2026-01-01_a_2026-01-07.html").write_text("vieja")
+    (site_dir / "ediciones" / "notas.txt").write_text("mía")
+    (site_dir / "ediciones" / "portada.html").write_text("mía")
+    newspaper.publish(con, cid, "Demo", site_dir)
+    assert sorted(p.name for p in (site_dir / "ediciones").iterdir()) == ["2026-10-01_a_2026-10-03.html", "notas.txt", "portada.html"]
+
+    # Los bytes de la más nueva cambiaron por fuera: no se escriben, el rango sale del sitio (no vuelve la vieja).
+    con.execute("UPDATE editions SET approved_html = approved_html || ? WHERE id=?", (b"<!-- otro -->", b))
+    site = newspaper.publish(con, cid, "Demo", site_dir)
+    assert site["files"] == ["index.html"] and [(s["id"], s["from"], s["to"]) for s in site["skipped"]] == [(b, "2026-10-01", "2026-10-03")]
+    assert "hash" in site["skipped"][0]["reason"] and not page_file.exists()
+    assert ((r := _row(c, cid, b))["hash_ok"], r["in_site"], _row(c, cid, a)["in_site"]) == (False, False, False)
+    capsys.readouterr()
+    assert cli.periodico(["--grupo-id", str(cid), "--solo-publicar", "--salida", str(site_dir)]) == 1
+    assert f"la edición {b} (2026-10-01 a 2026-10-03) no se escribió" in capsys.readouterr().err
+    # Cambiado a texto por SQL también se detecta, y reaprobar lo arregla.
+    con.execute("UPDATE editions SET approved_html = CAST(approved_html AS TEXT) || 'x' WHERE id=?", (b,))
+    assert _row(c, cid, b)["hash_ok"] is False
+    assert c.post(f"/api/newspaper/editions/{b}/approve", json=APPROVE).json()["in_site"] is True
+    assert newspaper.publish(con, cid, "Demo", site_dir)["skipped"] == [] and page_file.exists()
+    # Un registro de aprobación incompleto o ilegible (cambiado por SQL) es una aprobada dañada, nunca un 500.
+    for raw in ("{}", '{"by": "Jaime", "via": "WhatsApp"}', "no es JSON", "[1]"):
+        con.execute("UPDATE editions SET approval=? WHERE id=?", (raw, b))
+        assert c.get("/api/newspaper/editions", params={"chat_id": cid}).status_code == 200, raw
+        assert ((r := _row(c, cid, b))["hash_ok"], r["in_site"], r["approval"]["hash"]) == (False, False, ""), raw
+        assert [s["id"] for s in newspaper.publish(con, cid, "Demo", site_dir)["skipped"]] == [b], raw
+    assert c.post(f"/api/newspaper/editions/{b}/approve", json=APPROVE).json()["hash_ok"] is True
+    con.close()
+
+
+def test_approval_is_recorded_and_validated(client):
+    from datetime import UTC, datetime, timedelta
+
+    from community_lens import edition
+    from community_lens.db import connect
+    c, cid = client
+    eid = _generate(c, cid)
+    for body in ({"by": "", "via": "WhatsApp"}, {"by": "   ", "via": "WhatsApp"}, {"by": "Jaime", "via": ""}, {"by": "Jaime", "via": "\n\t"},
+                 {"by": "x" * 201, "via": "WhatsApp"}, {"by": "Jaime", "via": "y" * 201}, {**APPROVE, "to": "z" * 501}):
+        r = c.post(f"/api/newspaper/editions/{eid}/approve", json=body)
+        assert r.status_code == 422 and r.json()["error"] == "newspaper", (body, r.status_code)
+        check("ApiErrorBody", r.json())
+    assert "Falta quién aprueba" in c.post(f"/api/newspaper/editions/{eid}/approve", json={"by": " ", "via": "x"}).json()["detail"]
+    assert _row(c, cid, eid)["status"] == "borrador" and _row(c, cid, eid)["approval"] is None
+    for action in ("approve", "discard", "restore"):
+        assert c.post(f"/api/newspaper/editions/99999/{action}", json=APPROVE).status_code == 404
+    # Se guarda sin espacios sobrantes; el destino es opcional; 200 caracteres todavía entran.
+    row = c.post(f"/api/newspaper/editions/{eid}/approve", json={"by": "  Jaime ", "via": "x" * 200}).json()
+    approval = row["approval"]
+    assert (approval["by"], approval["via"], approval["to"]) == ("Jaime", "x" * 200, None)
+    at = datetime.strptime(approval["at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    assert abs(datetime.now(UTC) - at) < timedelta(minutes=1)
+    con = connect()
+    stored = con.execute("SELECT approval, approved_html FROM editions WHERE id=?", (eid,)).fetchone()
+    assert json.loads(stored["approval"]) == approval and approval["hash"] == edition.page_hash(stored["approved_html"])
+    assert re.fullmatch(r"sha256:[0-9a-f]{64}", approval["hash"])
+    # La misma función sirve al comando: aprobar de nuevo reemplaza el registro.
+    again = edition.approve(con, eid, "Otra persona", "correo", "sitio/")
+    assert (again["by"], again["to"]) == ("Otra persona", "sitio/") and _row(c, cid, eid)["approval"] == again
+    with pytest.raises(ValueError, match="Falta el canal"):
+        edition.approve(con, eid, "Jaime", None)
+    con.close()
+
+
+def test_discard_hides_and_restore_brings_back_a_draft(client, tmp_path):
+    from community_lens.db import connect
+    c, cid = client
+    con = connect()
+    eid = _generate(c, cid)
+    assert c.post(f"/api/newspaper/editions/{eid}/approve", json=APPROVE).status_code == 200
+    assert newspaper.publish(con, cid, "Demo", tmp_path / "sitio")["files"] == ["index.html", "ediciones/2026-10-01_a_2026-10-03.html"]
+    r = c.post(f"/api/newspaper/editions/{eid}/discard")
+    assert r.status_code == 200, r.text
+    row = r.json()
+    check("NewspaperEdition", row)
+    assert (row["status"], row["hash_ok"], row["in_site"]) == ("descartada", None, False) and row["approval"]["by"] == "Jaime"
+    assert newspaper.publish(con, cid, "Demo", tmp_path / "sitio")["files"] == ["index.html"]
+    assert list((tmp_path / "sitio" / "ediciones").iterdir()) == []
+    assert BAND in c.get(f"/periodico/{eid}").text
+    for action, why in (("discard", "ya está descartada"), ("approve", "recuperala antes")):
+        r = c.post(f"/api/newspaper/editions/{eid}/{action}", json=APPROVE)
+        assert r.status_code == 422 and why in r.json()["detail"], action
+    row = c.post(f"/api/newspaper/editions/{eid}/restore").json()
+    check("NewspaperEdition", row)
+    assert (row["status"], row["in_site"]) == ("borrador", False) and row["approval"]["by"] == "Jaime"  # el registro no se toca
+    assert c.post(f"/api/newspaper/editions/{eid}/restore").status_code == 422
+    assert newspaper.publish(con, cid, "Demo", tmp_path / "sitio")["files"] == ["index.html"]
+    con.close()
+
+
+def test_pending_draft_names_the_newest_and_counts_them(con):
+    from conftest import do_import
+
+    from community_lens import edition
+    assert issubclass(newspaper.DraftPending, newspaper.NewspaperError) and not issubclass(newspaper.DraftPending, newspaper.NoNews)
+    cid = do_import(con, "c.txt", data=_export("2026-10-20"), date_order="MDY")["chat_id"]
+    assert newspaper.pending_draft(con, cid) is None
+    a = edition.save(con, cid, {"from": "2026-10-01", "to": "2026-10-07", "editor": {}}, {})
+    b = edition.save(con, cid, {"from": "2026-10-08", "to": "2026-10-14", "editor": {}}, {})
+    got = newspaper.pending_draft(con, cid)
+    assert got == {"id": b, "from": "2026-10-08", "to": "2026-10-14", "created_at": got["created_at"], "count": 2}
+    edition.discard(con, b)
+    assert newspaper.pending_draft(con, cid)["id"] == a and newspaper.pending_draft(con, cid)["count"] == 1
+    con.execute("UPDATE editions SET status='aprobada' WHERE id=?", (a,))
+    assert newspaper.pending_draft(con, cid) is None
+
+
+def test_every_insert_into_editions_names_its_status():
+    """El valor por defecto de status es 'heredada', solo para filas anteriores a la aprobación: ningún INSERT nuevo
+    puede apoyarse en él, o una edición recién generada entraría al sitio sin que nadie la apruebe."""
+    from pathlib import Path
+
+    import community_lens
+    inserts, named = 0, 0
+    for f in Path(community_lens.__file__).parent.rglob("*.py"):
+        text = f.read_text(encoding="utf-8")
+        inserts += len(re.findall(r"INSERT\s+(?:OR\s+\w+\s+)?INTO\s+editions\b", text, re.I))
+        named += sum("status" in {c.strip() for c in cols.split(",")}
+                     for cols in re.findall(r"INSERT\s+(?:OR\s+\w+\s+)?INTO\s+editions\s*\(([^)]*)\)", text, re.I))
+    assert inserts >= 1 and named == inserts
+
+
+
+# ------------------------------------------ comando: aprobar, descartar, borrador y listar (#7) --
+
+def _json(capsys, *args: str) -> tuple[int, dict, str]:
+    """Corre el comando con --json: código, objeto de la salida estándar y mensajes para personas (stderr)."""
+    from community_lens import cli
+    code = cli.periodico([*args, "--json"])
+    io = capsys.readouterr()
+    return code, json.loads(io.out), io.err
+
+
+def _usage_error(capsys, *args: str) -> str:
+    """El comando rechaza los argumentos con código 2, antes de abrir la base."""
+    from community_lens import cli
+    with pytest.raises(SystemExit) as exit_:
+        cli.periodico(list(args))
+    assert exit_.value.code == 2, args
+    return capsys.readouterr().err
+
+
+def test_approve_on_the_fly_publishes_in_the_same_run(no_network, setenv, tmp_path, con, capsys):
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    site = tmp_path / "sitio"
+    code, res, err = _json(capsys, "--archivo", str(_folder(tmp_path, "2026-10-08") / "WhatsApp Chat 2026-10-08.txt"), "--grupo", "Semanal",
+                           "--orden-fecha", "MDY", "--continuar", *APPROVE_NOW, "--salida", str(site))
+    ed = res["edition"]
+    assert (code, res["status"], ed["status"], ed["in_site"], ed["hash_ok"]) == (0, "generada", "aprobada", True, True)
+    assert (ed["approval"]["by"], ed["approval"]["via"], ed["approval"]["to"]) == ("Prueba", "pytest", str(site))  # --destino: la de --salida
+    assert ed["articles"] > 0 and res["site"] == {"dir": str(site), "files": 2, "skipped": []} and "aprobada al generarla" in err
+    assert (site / "ediciones" / "2026-10-01_a_2026-10-07.html").exists()
+    # Aprobar exige quién y por qué canal, y esos datos no van sin --aprobar.
+    for args, why in ((["--aprobar", "--aprobado-por", "Jaime"], "exige --aprobado-por y --canal"),
+                      (["--aprobar", "--canal", "WhatsApp"], "exige --aprobado-por y --canal"),
+                      (["--aprobado-por", "Jaime"], "solo van con --aprobar"), (["--destino", "web"], "solo van con --aprobar"),
+                      (["--solo-publicar", "--salida", str(site), *APPROVE_NOW], "--solo-publicar no genera ninguna")):
+        assert why in _usage_error(capsys, "--grupo", "Semanal", "--dias", "3", *args)
+
+
+def test_bad_approval_data_is_rejected_before_anything_runs(no_network, setenv, tmp_path, con, capsys):
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    net, models = no_network
+    export = str(_folder(tmp_path, "2026-10-08") / "WhatsApp Chat 2026-10-08.txt")
+    for args, why in ((["--aprobado-por", "x" * 201, "--canal", "pytest"], "hasta 200 caracteres"),
+                      (["--aprobado-por", "   ", "--canal", "pytest"], "Falta quién aprueba"),
+                      (["--aprobado-por", "Prueba", "--canal", "\t"], "Falta el canal"),
+                      (["--aprobado-por", "Prueba", "--canal", "pytest", "--destino", "z" * 501], "hasta 500 caracteres"),
+                      (["--aprobado-por", "Prueba", "--canal", "pytest", "--salida", "s" * 501], "hasta 500 caracteres")):
+        assert why in _usage_error(capsys, "--archivo", export, "--grupo", "Semanal", "--orden-fecha", "MDY", "--continuar", "--aprobar", *args)
+    assert len(models.requests) == 0 and net.requests == []  # nada salió de la máquina
+    assert con.execute("SELECT COUNT(*) FROM chats").fetchone()[0] == 0  # ni se importó
+
+
+def test_command_acts_on_a_saved_edition_without_generating(no_network, setenv, tmp_path, con, capsys):
+    from conftest import do_import
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    net, models = no_network
+    site = tmp_path / "sitio"
+    assert _run(tmp_path, "2026-10-08") == 0
+    cid = newspaper.find_chat(con, "Semanal")["id"]
+    eid = newspaper.editions(con, cid)[0]["id"]
+    calls, pages = len(models.requests), len(net.requests)
+    capsys.readouterr()
+    code, res, err = _json(capsys, "--grupo", "Semanal", "--edicion", str(eid), "--aprobar", "--aprobado-por", "Jaime", "--canal", "WhatsApp",
+                           "--salida", str(site))
+    assert (code, res["status"], res["import"], res["warnings"]) == (0, "aprobada", None, [])
+    check("NewspaperEdition", res["edition"])
+    assert res["edition"] == newspaper.editions(con, cid)[0] and res["edition"]["approval"]["to"] == str(site)
+    assert res["site"]["files"] == 2 and (site / "ediciones" / "2026-10-01_a_2026-10-07.html").exists() and "Jaime" not in err
+    # Ni el modelo ni las páginas: actuar no saca nada de la máquina.
+    assert len(models.requests) == calls and len(net.requests) == pages
+    code, res, _ = _json(capsys, "--grupo-id", str(cid), "--edicion", str(eid), "--aprobar", "--aprobado-por", "Jaime", "--canal", "correo",
+                         "--destino", "web de la comunidad")
+    assert (code, res["edition"]["approval"]["via"], res["edition"]["approval"]["to"], res["site"]) == (0, "correo", "web de la comunidad", None)
+    code, res, _ = _json(capsys, "--grupo-id", str(cid), "--edicion", str(eid), "--aprobar", "--aprobado-por", "Jaime", "--canal", "correo")
+    assert (code, res["edition"]["approval"]["to"]) == (0, None)  # sin --destino ni --salida no se inventa un destino
+    assert "hasta 200 caracteres" in _usage_error(capsys, "--grupo-id", str(cid), "--edicion", str(eid), "--aprobar", "--aprobado-por", "x" * 201,
+                                                  "--canal", "correo")
+    # La edición tiene que ser del grupo indicado.
+    other = do_import(con, "otro.txt", data=CHAT, date_order="MDY")["chat_id"]
+    code, res, _ = _json(capsys, "--grupo-id", str(other), "--edicion", str(eid), "--descartar")
+    assert (code, res["status"]) == (1, "error") and f"no es del grupo {other}" in res["detail"]
+    assert newspaper.editions(con, cid)[0]["status"] == "aprobada"
+    for args, why in ((["--continuar"], "no se combina con --continuar"), (["--dias", "3"], "no se combina con --dias"),
+                      (["--archivo", "x.txt"], "no se combina con --archivo"), (["--solo-publicar", "--salida", "x"], "no hace falta --solo-publicar"),
+                      ([], "--edicion necesita una acción")):
+        assert why in _usage_error(capsys, "--grupo", "Semanal", "--edicion", str(eid), *args)
+
+
+def test_discard_and_restore_by_command(no_network, setenv, tmp_path, con, capsys):
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    assert _run(tmp_path, "2026-10-08", *APPROVE_NOW) == 0
+    cid = newspaper.find_chat(con, "Semanal")["id"]
+    first = newspaper.editions(con, cid)[0]["id"]
+    capsys.readouterr()
+    code, res, _ = _json(capsys, "--grupo", "Semanal", "--edicion", str(first), "--descartar")
+    assert (code, res["status"], res["edition"]["status"], res["edition"]["in_site"]) == (0, "descartada", "descartada", False)
+    # Una descartada no cuenta para --continuar: su período se vuelve a generar.
+    assert _run(tmp_path, "2026-10-08") == 0
+    assert "(2026-10-01 a 2026-10-07)" in capsys.readouterr().out
+    code, res, _ = _json(capsys, "--grupo", "Semanal", "--edicion", str(first), "--recuperar")
+    assert (code, res["status"], res["edition"]["status"], res["edition"]["approval"]["by"]) == (0, "recuperada", "borrador", "Prueba")
+    code, res, _ = _json(capsys, "--grupo", "Semanal", "--edicion", str(first), "--recuperar")
+    assert (code, res["status"]) == (1, "error") and "no está descartada" in res["detail"]
+    for args, why in ((["--descartar"], "necesitan --edicion"), (["--recuperar"], "necesitan --edicion"),
+                      (["--edicion", "1", "--descartar", "--recuperar"], "no se combinan"),
+                      (["--edicion", "1", "--descartar", *APPROVE_NOW], "no se combinan")):
+        assert why in _usage_error(capsys, "--grupo", "Semanal", *args)
+
+
+def test_a_pending_draft_stops_continue(no_network, setenv, tmp_path, con, capsys):
+    from community_lens import cli
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    net, models = no_network
+    assert _run(tmp_path, "2026-10-08", *APPROVE_NOW) == 0
+    # Borradores hechos con un rango explícito (como desde la pantalla): ahí no rige el freno.
+    assert cli.periodico(["--grupo", "Semanal", "--desde", "2026-10-01", "--hasta", "2026-10-03"]) == 0
+    assert cli.periodico(["--grupo", "Semanal", "--desde", "2026-10-04", "--hasta", "2026-10-06"]) == 0
+    cid = newspaper.find_chat(con, "Semanal")["id"]
+    newest = newspaper.editions(con, cid)[0]["id"]
+    calls, pages = len(models.requests), len(net.requests)
+    capsys.readouterr()
+    # Con la misma exportación sigue ganando "sin novedad": primero se mira si hay días nuevos.
+    assert _run(tmp_path, "2026-10-08", "--json") == 3
+    assert json.loads(capsys.readouterr().out)["status"] == "sin_novedad"
+    assert _run(tmp_path, "2026-10-15", "--json") == 3
+    res = json.loads(capsys.readouterr().out)
+    assert (res["status"], res["edition"], res["site"]) == ("borrador_pendiente", None, None)
+    assert f"La edición {newest} (2026-10-04 a 2026-10-06) sigue como borrador (hay 2 borradores" in res["detail"]
+    assert f"--edicion {newest} --aprobar" in res["detail"] and f"--edicion {newest} --descartar" in res["detail"]
+    assert len(models.requests) == calls and len(net.requests) == pages and len(newspaper.editions(con, cid)) == 3
+    # Descartar o aprobar los borradores libera la corrida.
+    assert cli.periodico(["--grupo", "Semanal", "--edicion", str(newest), "--descartar"]) == 0
+    assert cli.periodico(["--grupo", "Semanal", "--edicion", str(newest - 1), *APPROVE_NOW]) == 0
+    capsys.readouterr()
+    assert _run(tmp_path, "2026-10-15") == 0
+    assert "(2026-10-08 a 2026-10-14)" in capsys.readouterr().out
+
+
+def test_draft_preview_and_listing(no_network, setenv, tmp_path, con, capsys):
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    preview = tmp_path / "compartida" / "nueva" / "borrador.html"
+    assert _run(tmp_path, "2026-10-08", "--borrador", str(preview)) == 0
+    assert f"escrita en {preview}" in capsys.readouterr().out
+    assert BAND in preview.read_text(encoding="utf-8") and [p.name for p in preview.parent.iterdir()] == ["borrador.html"]
+    assert not list(tmp_path.rglob("index.html"))  # sin --salida no se escribe ningún sitio
+    cid = newspaper.find_chat(con, "Semanal")["id"]
+    eid = newspaper.editions(con, cid)[0]["id"]
+    # De una aprobada también: es el preview para mandar a revisar de nuevo, y no le cambia el estado.
+    approve_drafts(con)
+    code, res, _ = _json(capsys, "--grupo", "Semanal", "--edicion", str(eid), "--borrador", str(tmp_path / "otra.html"))
+    assert (code, res["status"], res["draft"], res["edition"]["status"]) == (0, "vista_previa", str(tmp_path / "otra.html"), "aprobada")
+    assert BAND in (tmp_path / "otra.html").read_text(encoding="utf-8")
+    assert "--solo-publicar no genera ninguna" in _usage_error(capsys, "--grupo", "Semanal", "--solo-publicar", "--salida", "x", "--borrador", "b.html")
+    # --listar: una línea por edición, y en JSON la lista completa.
+    assert _run(tmp_path, "2026-10-15") == 0
+    from community_lens import cli
+    capsys.readouterr()
+    assert cli.periodico(["--grupo", "Semanal", "--listar"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 2 and lines[0].startswith(f"{eid + 1}  2026-10-08 a 2026-10-14  borrador · fuera del sitio")
+    assert lines[1].startswith(f"{eid}  2026-10-01 a 2026-10-07  aprobada por Prueba (pytest, 20") and lines[1].endswith(" · en el sitio")
+    code, res, _ = _json(capsys, "--grupo", "Semanal", "--listar")
+    assert (code, res["status"], res["edition"]) == (0, "listado", None) and [e["status"] for e in res["editions"]] == ["borrador", "aprobada"]
+    check("NewspaperEdition", res["editions"], array=True)
+    assert "--listar solo muestra" in _usage_error(capsys, "--grupo", "Semanal", "--listar", "--continuar")
+
+
+def test_damaged_approved_edition_is_an_error_in_json(no_network, setenv, tmp_path, con, capsys):
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    site = tmp_path / "sitio"
+    assert _run(tmp_path, "2026-10-08", *APPROVE_NOW, "--salida", str(site)) == 0
+    cid = newspaper.find_chat(con, "Semanal")["id"]
+    eid = newspaper.editions(con, cid)[0]["id"]
+    con.execute("UPDATE editions SET approved_html = approved_html || ? WHERE id=?", (b"<!-- otro -->", eid))
+    capsys.readouterr()
+    code, res, err = _json(capsys, "--grupo", "Semanal", "--solo-publicar", "--salida", str(site))
+    assert (code, res["status"], res["site"]["files"]) == (1, "error", 1) and [s["id"] for s in res["site"]["skipped"]] == [eid]
+    assert res["detail"].startswith(f"1 edición(es) no se escribieron en el sitio: la {eid} (2026-10-01 a 2026-10-07): el HTML guardado")
+    assert f"la edición {eid}" in err
+    # Reaprobar por comando lo arregla en la misma corrida.
+    code, res, _ = _json(capsys, "--grupo", "Semanal", "--edicion", str(eid), *APPROVE_NOW, "--salida", str(site))
+    assert (code, res["status"], res["edition"]["hash_ok"], res["site"]["skipped"]) == (0, "aprobada", True, [])

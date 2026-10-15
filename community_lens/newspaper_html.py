@@ -2,15 +2,19 @@
 
 Todo texto (del modelo o de las páginas) entra escapado; las direcciones salen de la base, no del modelo.
 Recibe una edición con la forma actual (edition.Edition): las guardadas con una forma anterior ya pasaron
-por edition.upgrade(), así que acá no hay valores por defecto.
+por edition.upgrade(), así que acá no hay valores por defecto. De edition.py toma solo los tipos (sin importarlo al
+correr), porque edition.py dibuja con render() al aprobar una edición.
 """
 from __future__ import annotations
 
 from html import escape as e
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .dates import fmt_day, short_day
-from .edition import Article, Edition, Reading
+
+if TYPE_CHECKING:
+    from .edition import Article, Edition, Reading
 
 CSS = Path(__file__).with_name("newspaper.css").read_text(encoding="utf-8")
 ICON = {"X": "𝕏", "YouTube": "▶️", "TikTok": "🎵", "Instagram": "📸", "LinkedIn": "💼", "Facebook": "📘", "Threads": "🧵",
@@ -57,7 +61,9 @@ def _reading(r: Reading) -> str:
               "mensajes de este período.</p></section>")
 
 
-def render(d: Edition) -> str:
+def render(d: Edition, draft: bool = False) -> str:
+    """La página de una edición. Con draft, la banda "Borrador, no compartir" arriba y "BORRADOR · " en el título;
+    sin draft, la misma página de siempre, byte a byte (es la que se guarda al aprobar)."""
     lead, arts, socials, tools, readings, f = d["lead"], d["articles"], d["socials"], d["tools"], d["readings"], d["facts"]
     plural = lambda n, one, many: f"{n} {one if n == 1 else many}"
     nav = [f'<a href="#articulos">📰 {plural(1 + len(arts), "artículo", "artículos")}</a>']
@@ -107,6 +113,7 @@ def render(d: Edition) -> str:
     if d["unread"]:
         rows = "".join(f"<li>{_link(u['url'], u['domain'])} · compartido {e(short_day(u['shared']))} · {e(u['reason'])}</li>" for u in d["unread"])
         unread = f'<section class="fp-failed"><h2>No se pudo leer</h2><ul>{rows}</ul></section>'
+    band = '\n<p class="fp-draft">Borrador, no compartir</p>' if draft else ""
     editor = d["editor"]
     foot = (f"Resúmenes generados automáticamente con {e(editor['label'])} ({e(editor['model'])}) a partir de los enlaces compartidos. "
             "Pueden contener errores; consultá la fuente original. Los enlaces y las cifras salen del chat exportado. "
@@ -117,11 +124,11 @@ def render(d: Edition) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lo que se compartió · {e(d['chat_name'])} · {e(d['range_label'])}</title>
+<title>{"BORRADOR · " if draft else ""}Lo que se compartió · {e(d['chat_name'])} · {e(d['range_label'])}</title>
 <style>html,body{{margin:0}}
 {CSS}</style>
 </head>
-<body><div class="fp-root"><div class="fp-wrap">
+<body><div class="fp-root"><div class="fp-wrap">{band}
 <header>
 <div class="fp-top"><span>{e(d['created_label'])}</span><span>Datos del {e(d['range_label'])}</span></div>
 <h1 class="fp-title">Lo que se compartió</h1>

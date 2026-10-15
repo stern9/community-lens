@@ -52,6 +52,10 @@ class NoMaterial(NewspaperError):
     """El rango existe pero no trae el mínimo de artículos: no se genera y el material queda para después."""
 
 
+class DraftPending(NewspaperError):
+    """El grupo tiene un borrador sin aprobar ni descartar: --continuar no genera otro encima (pending_draft dice cuál)."""
+
+
 def _base(domain: str) -> str:
     d = domain.lower().removeprefix("www.").removeprefix("m.").removeprefix("vt.").removeprefix("vm.").removeprefix("mobile.")
     return d
@@ -680,7 +684,7 @@ def generate(con, chat_id: int, chat_name: str, d_from: str | None, d_to: str | 
                           "pages": sum(1 for it in items if pages[it["url"]]["status"] == "ok"),
                           "chat_messages": len(msgs) if read_by else 0, "chat_to": [p.label for p in read_by]}
     edition_id = edition.save(con, chat_id, data, sent)
-    return {"id": edition_id, "sent": sent, "warnings": errors, "articles": 1 + len(body["articles"]),
+    return {"id": edition_id, "status": "borrador", "sent": sent, "warnings": errors, "articles": 1 + len(body["articles"]),
             "socials": len(body["socials"]), "tools": len(body["tools"]), "unread": len(body["unread"]), "readings": len(readings)}
 
 
@@ -688,27 +692,61 @@ def editions(con, chat_id: int) -> list[dict]:
     return edition.listing(con, chat_id)
 
 
-def edition_html(con, edition_id: int) -> tuple[str, str] | None:
+def pending_draft(con, chat_id: int) -> dict | None:
+    """El borrador más reciente del grupo y cuántos hay en total, o None si no tiene ninguno."""
+    r = con.execute("""SELECT id, date_from, date_to, created_at, COUNT(*) OVER () n FROM editions
+                       WHERE chat_id=? AND status='borrador' ORDER BY id DESC LIMIT 1""", (chat_id,)).fetchone()
+    return {"id": r["id"], "from": r["date_from"], "to": r["date_to"], "created_at": r["created_at"], "count": r["n"]} if r else None
+
+
+def edition_html(con, edition_id: int, draft: bool | None = None) -> tuple[str, str] | None:
     """(página, nombre de archivo). Se arma de nuevo desde los datos guardados, así una mejora de la plantilla
-    llega también a ediciones viejas."""
+    llega también a ediciones viejas. La banda de borrador va según el estado (borrador o descartada) salvo que
+    `draft` la fuerce; con banda, el nombre empieza con "borrador_" para que no se confunda con la publicada."""
     try:
-        ed = edition.load(con, edition_id)
+        found = edition.load_row(con, edition_id)
     except ValueError as err:  # guardada por una versión más nueva de la app
         raise NewspaperError(str(err)) from None
-    return (newspaper_html.render(ed), f"periodico_{ed['from']}_a_{ed['to']}") if ed else None
+    if not found:
+        return None
+    row, ed = found
+    band = row["status"] in ("borrador", "descartada") if draft is None else draft
+    return newspaper_html.render(ed, draft=band), f"{'borrador' if band else 'periodico'}_{ed['from']}_a_{ed['to']}"
 
 
-def publish(con, chat_id: int, chat_name: str, out_dir) -> list[str]:
-    """Escribe un sitio estático: una página por edición (la más reciente de cada rango) y un índice.
-    Solo HTML; listo para subir a cualquier hosting estático."""
+SITE_PAGE = re.compile(r"\d{4}-\d{2}-\d{2}_a_\d{4}-\d{2}-\d{2}\.html")  # lo único que publish() borra de ediciones/
+
+
+def publish(con, chat_id: int, chat_name: str, out_dir) -> dict:
+    """Escribe un sitio estático: una página por rango (edition.publishable) y un índice. Solo HTML; listo para
+    subir a cualquier hosting estático. No escribe en la base.
+
+    De una aprobada escribe los bytes guardados al aprobarla, tal cual, si su sha256 sigue coincidiendo; si no, no la
+    escribe y la devuelve en "skipped" con el motivo (su rango queda fuera del sitio). Una heredada se dibuja como
+    siempre. Después borra de ediciones/ las páginas de rango que no escribió en esta corrida (una descartada o un
+    rango que quedó sin publicable no siguen en la carpeta que se sube); nada más. Devuelve
+    {"files": [rutas escritas, index.html primero], "skipped": [{"id", "from", "to", "reason"}]}."""
     out = Path(out_dir)
     (out / "ediciones").mkdir(parents=True, exist_ok=True)
-    entries, written = [], []
-    for ed in edition.latest_per_range(con, chat_id):
-        name = f"ediciones/{ed['from']}_a_{ed['to']}.html"
-        (out / name).write_text(newspaper_html.render(ed), encoding="utf-8")
+    entries, written, skipped = [], [], []
+    for r in edition.publishable(con, chat_id):
+        name = f"ediciones/{r['date_from']}_a_{r['date_to']}.html"
+        try:
+            ed = edition.upgrade(json.loads(r["data"]))
+            if r["status"] == "aprobada" and not edition.hash_ok(r):
+                raise ValueError("el HTML guardado al aprobarla no coincide con su hash; aprobala de nuevo para volver a publicarla.")
+        except ValueError as err:
+            skipped.append({"id": r["id"], "from": r["date_from"], "to": r["date_to"], "reason": str(err)})
+            continue
+        if r["status"] == "aprobada":
+            (out / name).write_bytes(edition.approved_bytes(r))
+        else:
+            (out / name).write_text(newspaper_html.render(ed), encoding="utf-8")
         written.append(name)
         entries.append({"href": name, "range_label": ed["range_label"], "year": ed["to"][:4], "thread": ed["thread"],
                         "headline": ed["lead"]["headline"], "articles": 1 + len(ed["articles"])})
+    for f in (out / "ediciones").iterdir():
+        if SITE_PAGE.fullmatch(f.name) and f"ediciones/{f.name}" not in written and f.is_file():
+            f.unlink()
     (out / "index.html").write_text(newspaper_html.render_index(chat_name, entries), encoding="utf-8")
-    return ["index.html"] + written
+    return {"files": ["index.html"] + written, "skipped": skipped}

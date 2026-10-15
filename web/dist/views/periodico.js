@@ -2,7 +2,7 @@
 // La vista previa no descarga páginas ni consulta modelos; eso solo pasa al apretar "Generar periódico".
 import * as api from "../api.js";
 import { h, kind, put } from "../dom.js";
-import { errMsg, n, pad2, utcMinute } from "../format.js";
+import { errMsg, monthName, n, pad2, utcMinute } from "../format.js";
 import { emptyState, view } from "../shell.js";
 import { state } from "../state.js";
 const PRESETS = [{ key: "week", label: "Última semana", days: 6 }, { key: "fortnight", label: "Últimas 2 semanas", days: 13 }, { key: "month", label: "Último mes", days: 29 }];
@@ -63,9 +63,18 @@ export const viewPeriodico = async () => {
         put(models, picker.nodes);
         syncGo();
     }
+    // Las descartadas se ocultan salvo que se pidan; mostrarlas u ocultarlas redibuja sin volver a consultar.
+    let editions = [];
+    let showDiscarded = false;
+    const drawSaved = () => {
+        const discarded = editions.filter((e) => e.status === "descartada").length;
+        const shown = showDiscarded ? editions : editions.filter((e) => e.status !== "descartada");
+        put(saved, shown.length ? h("ul", { class: "editions" }, shown.map((e) => editionRow(e, loadSaved)))
+            : h("p", { class: "muted" }, editions.length ? "Todas las ediciones de este grupo están descartadas." : "Todavía no hay ediciones de este grupo."), discarded ? h("p", null, h("button", { type: "button", class: "ghost", onclick: () => { showDiscarded = !showDiscarded; drawSaved(); } }, showDiscarded ? "Ocultar descartadas" : `Mostrar ${n(discarded)} descartada${discarded === 1 ? "" : "s"}`)) : null);
+    };
     async function loadSaved() {
-        const list = await api.getEditions(chatId);
-        put(saved, list.length ? h("ul", { class: "editions" }, list.map(editionRow)) : h("p", { class: "muted" }, "Todavía no hay ediciones de este grupo."));
+        editions = await api.getEditions(chatId);
+        drawSaved();
     }
     go.addEventListener("click", () => void (async () => {
         const choice = picker?.choice();
@@ -144,8 +153,59 @@ function editionReady(r) {
             (r.unread ? `, ${n(r.unread)} que no se pudieron leer` : "") + (r.readings ? ` y ${n(r.readings)} lectura${r.readings === 1 ? "" : "s"} de la conversación.` : ".")),
         r.warnings.map((w) => h("p", { class: "error" }, w)),
         h("p", null, h("small", null, "Revisala antes de compartirla: los resúmenes son automáticos y pueden tener errores.")),
+        r.status === "borrador" ? h("p", null, "Quedó como borrador: aprobala en Ediciones guardadas para que entre en el sitio.") : null,
         h("div", { class: "actions" }, h("a", { href: api.editionUrl(r.id), target: "_blank", rel: "noopener", class: "btnlink" }, "Abrir el periódico"), h("a", { href: api.editionUrl(r.id, true), class: "btnlink" }, "Descargar HTML"))
     ];
 }
-/** Una edición guardada: su rango, quién la redactó y qué se envió para hacerla. */
-const editionRow = (e) => h("li", null, `${e.from} a ${e.to} · generada ${utcMinute(e.created_at)} UTC · ${e.editor.label}${e.sent.pages_tried.length ? ` (falló ${e.sent.pages_tried.join(" y ")})` : ""} · `, e.sent.chat_messages ? `${n(e.sent.chat_messages)} mensajes enviados a ${e.sent.chat_to.join(" y ")} · ` : "sin texto del chat enviado · ", h("a", { href: api.editionUrl(e.id), target: "_blank", rel: "noopener", class: "btnlink" }, "Abrir"), " ", h("a", { href: api.editionUrl(e.id, true), class: "btnlink" }, "Descargar HTML"));
+/** "21 oct" de un instante UTC "AAAA-MM-DDTHH:MM:SSZ". */
+const shortDay = (iso) => `${Number(iso.slice(8, 10))} ${monthName(iso.slice(0, 7))}`;
+/** El estado de una edición guardada: si está en el sitio, quién la aprobó y qué hay que mirar. */
+function editionState(e) {
+    const a = e.approval;
+    switch (e.status) {
+        case "borrador": return "borrador";
+        case "descartada": return "descartada";
+        case "heredada": return "heredada, sin registro de aprobación" + (e.in_site ? "" : " · reemplazada por una más nueva");
+        case "aprobada": {
+            const who = a && a.by ? `aprobada por ${a.by} (${a.via}, ${shortDay(a.at)})` : "aprobada";
+            if (e.hash_ok === false)
+                return `${who} · dañada: no coincide con su hash`;
+            if (!e.in_site)
+                return `${who} · reemplazada por una más nueva`;
+            return `${who} · en el sitio` + (e.up_to_date === false ? " · hay plantilla nueva: reaprobá para actualizarla" : "");
+        }
+    }
+}
+/** Una edición guardada: su rango, quién la redactó, qué se envió para hacerla, su estado y qué se puede hacer con
+ * ella. Cada acción llama a la API y, si sale bien, `reload` vuelve a pedir la lista; si falla, el error queda en la fila. */
+function editionRow(e, reload) {
+    const form = h("span"), msg = h("span", { class: "error" });
+    const act = (call) => () => void (async () => {
+        try {
+            await call();
+            await reload();
+        }
+        catch (err) {
+            put(msg, " " + errMsg(err));
+        }
+    })();
+    const button = (label, onclick) => h("button", { type: "button", class: "ghost", onclick }, label);
+    // Aprobar pide quién y por qué canal en la misma fila; queda registrado junto con los bytes que se publican.
+    const askApproval = () => {
+        const by = h("input", { type: "text", maxlength: 200, placeholder: "Quién aprueba", "aria-label": "Quién aprueba" });
+        const via = h("input", { type: "text", maxlength: 200, placeholder: "Canal (WhatsApp, correo…)", "aria-label": "Canal por el que se aprobó" });
+        put(form, " ", by, " ", via, " ", h("button", { type: "button", onclick: act(() => api.approveEdition(e.id, { by: by.value, via: via.value })) }, "Confirmar"));
+    };
+    // Descartar una aprobada que está en el sitio la saca en la próxima publicación, y recuperarla no devuelve los bytes
+    // aprobados: vuelve como borrador y hay que aprobarla de nuevo. Por eso se pregunta antes.
+    const discard = act(() => api.discardEdition(e.id));
+    const askDiscard = () => {
+        if (confirm("Esta edición está aprobada y en el sitio. Si la descartás, sale del sitio en la próxima publicación; si después "
+            + "la recuperás, vuelve como borrador y hay que aprobarla de nuevo. ¿Descartarla?"))
+            discard();
+    };
+    const actions = e.status === "descartada" ? [button("Recuperar", act(() => api.restoreEdition(e.id)))]
+        : [button(e.status === "aprobada" ? "Aprobar de nuevo…" : "Aprobar…", askApproval), " ",
+            button("Descartar", e.status === "aprobada" && e.in_site ? askDiscard : discard)];
+    return h("li", null, `${e.from} a ${e.to} · generada ${utcMinute(e.created_at)} UTC · ${e.editor.label}${e.sent.pages_tried.length ? ` (falló ${e.sent.pages_tried.join(" y ")})` : ""} · `, e.sent.chat_messages ? `${n(e.sent.chat_messages)} mensajes enviados a ${e.sent.chat_to.join(" y ")} · ` : "sin texto del chat enviado · ", h("b", null, editionState(e)), " · ", h("a", { href: api.editionUrl(e.id), target: "_blank", rel: "noopener", class: "btnlink" }, "Abrir"), " ", h("a", { href: api.editionUrl(e.id, true), class: "btnlink" }, "Descargar HTML"), " ", actions, form, msg);
+}

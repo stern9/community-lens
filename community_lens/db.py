@@ -162,8 +162,9 @@ CREATE TABLE IF NOT EXISTS pages (
 );
 
 -- Ediciones del periódico. data = contenido estructurado (su forma está en edition.py); la página se dibuja
--- desde data cada vez que se abre o se publica. html quedó de una versión anterior: no se lee y las ediciones
--- nuevas la dejan vacía (no se elimina para no tocar bases existentes).
+-- desde data cada vez que se abre, y al aprobarla se guardan los bytes que se publican. html quedó de una versión
+-- anterior: no se lee y las ediciones nuevas la dejan vacía (no se elimina para no tocar bases existentes).
+-- status, approval y approved_html se agregaron después: en una base vieja los agrega connect() (EDITION_COLUMNS).
 CREATE TABLE IF NOT EXISTS editions (
     id          INTEGER PRIMARY KEY,
     chat_id     INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
@@ -173,9 +174,16 @@ CREATE TABLE IF NOT EXISTS editions (
     editor      TEXT NOT NULL,           -- JSON: proveedor y modelo que redactó
     sent        TEXT NOT NULL,           -- JSON: qué salió de la máquina y hacia dónde
     data        TEXT NOT NULL,
-    html        TEXT NOT NULL
+    html        TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'heredada',  -- borrador | aprobada | descartada | heredada (anterior a la aprobación)
+    approval      TEXT,                              -- JSON (edition.Approval): hash, quién, por qué canal, cuándo, adónde
+    approved_html BLOB                               -- los bytes exactos que se publican; NULL si nunca se aprobó
 );
 """
+
+# Columnas de editions que una base anterior puede no tener, con la misma declaración que en SCHEMA. Las filas que
+# ya existían quedan 'heredada': nadie las aprobó con hash, pero tampoco se las saca del sitio.
+EDITION_COLUMNS = (("status", "TEXT NOT NULL DEFAULT 'heredada'"), ("approval", "TEXT"), ("approved_html", "BLOB"))
 
 
 def connect(path: str | None = None) -> sqlite3.Connection:
@@ -188,9 +196,18 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys = ON")
     con.execute("PRAGMA journal_mode = WAL")
     con.executescript(SCHEMA)
-    # Migración: ejecución de clasificación vigente por chat (NULL = la más reciente).
-    if "active_run_id" not in {r["name"] for r in con.execute("PRAGMA table_info(chats)")}:
+    # Migraciones aditivas, una columna por ALTER y solo si falta: si el proceso se corta entre dos, la próxima apertura
+    # completa la que quedó. Carrera conocida y no resuelta: dos procesos que abren a la vez una base vieja (la app y
+    # un cron) pueden intentar el mismo ALTER y uno falla con "duplicate column"; volver a abrir la deja bien.
+    columns = lambda table: {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
+    # Ejecución de clasificación vigente por chat (NULL = la más reciente).
+    if "active_run_id" not in columns("chats"):
         con.execute("ALTER TABLE chats ADD COLUMN active_run_id INTEGER")
+    # Ciclo de vida de las ediciones del periódico (borrador, aprobación, publicación).
+    have = columns("editions")
+    for name, decl in EDITION_COLUMNS:
+        if name not in have:
+            con.execute(f"ALTER TABLE editions ADD COLUMN {name} {decl}")
     _normalize_pages(con)
     return con
 

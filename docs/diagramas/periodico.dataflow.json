@@ -643,8 +643,8 @@
       "id": "publicar",
       "from": "edition",
       "to": "site",
-      "label": "publicar",
-      "classification": "edición completa",
+      "label": "publicar solo lo aprobado",
+      "classification": "bytes guardados al aprobar",
       "variant": "emphasis",
       "labelAt": [
         960,
