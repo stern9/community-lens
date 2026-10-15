@@ -529,10 +529,11 @@ def newspaper_restore(edition_id: int, con=Depends(db)):
 
 
 @app.get("/periodico/{edition_id}")
-def newspaper_page(edition_id: int, download: bool = False, borrador: bool = False, con=Depends(db)):
+def newspaper_page(edition_id: int, download: bool = False, borrador: bool = False, publico: bool = False, con=Depends(db)):
     """La edición como página autocontenida: sin scripts, sin red, solo estilos en línea. Lleva la banda de borrador
-    si la edición es borrador o descartada, o si se pide con ?borrador=1 (para mandar a revisar una aprobada)."""
-    found = newspaper.edition_html(con, edition_id, True if borrador else None)
+    si la edición es borrador o descartada, o si se pide con ?borrador=1 (para mandar a revisar una aprobada). Con
+    ?publico=1, la versión que se publica, sin lecturas, cifras ni nombre del grupo; se combina con ?borrador=1."""
+    found = newspaper.edition_html(con, edition_id, True if borrador else None, public=publico)
     if not found:
         raise HTTPException(404, "Edición no encontrada.")
     page, name = found

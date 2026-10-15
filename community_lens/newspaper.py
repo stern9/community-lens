@@ -699,10 +699,11 @@ def pending_draft(con, chat_id: int) -> dict | None:
     return {"id": r["id"], "from": r["date_from"], "to": r["date_to"], "created_at": r["created_at"], "count": r["n"]} if r else None
 
 
-def edition_html(con, edition_id: int, draft: bool | None = None) -> tuple[str, str] | None:
+def edition_html(con, edition_id: int, draft: bool | None = None, public: bool = False) -> tuple[str, str] | None:
     """(página, nombre de archivo). Se arma de nuevo desde los datos guardados, así una mejora de la plantilla
     llega también a ediciones viejas. La banda de borrador va según el estado (borrador o descartada) salvo que
-    `draft` la fuerce; con banda, el nombre empieza con "borrador_" para que no se confunda con la publicada."""
+    `draft` la fuerce; con `public`, la versión que se publica (sin lecturas, cifras ni nombre del grupo). El nombre
+    dice cuál es, para que no se confundan en una carpeta: periodico_, borrador_, publico_ o borrador_publico_."""
     try:
         found = edition.load_row(con, edition_id)
     except ValueError as err:  # guardada por una versión más nueva de la app
@@ -711,19 +712,21 @@ def edition_html(con, edition_id: int, draft: bool | None = None) -> tuple[str, 
         return None
     row, ed = found
     band = row["status"] in ("borrador", "descartada") if draft is None else draft
-    return newspaper_html.render(ed, draft=band), f"{'borrador' if band else 'periodico'}_{ed['from']}_a_{ed['to']}"
+    prefix = "_".join(["borrador"] * band + ["publico"] * public) or "periodico"
+    return newspaper_html.render(ed, draft=band, public=public), f"{prefix}_{ed['from']}_a_{ed['to']}"
 
 
 SITE_PAGE = re.compile(r"\d{4}-\d{2}-\d{2}_a_\d{4}-\d{2}-\d{2}\.html")  # lo único que publish() borra de ediciones/
 
 
-def publish(con, chat_id: int, chat_name: str, out_dir) -> dict:
+def publish(con, chat_id: int, out_dir) -> dict:
     """Escribe un sitio estático: una página por rango (edition.publishable) y un índice. Solo HTML; listo para
     subir a cualquier hosting estático. No escribe en la base.
 
-    De una aprobada escribe los bytes guardados al aprobarla, tal cual, si su sha256 sigue coincidiendo; si no, no la
-    escribe y la devuelve en "skipped" con el motivo (su rango queda fuera del sitio). Una heredada se dibuja como
-    siempre. Después borra de ediciones/ las páginas de rango que no escribió en esta corrida (una descartada o un
+    Todo lo que escribe es la versión pública (sin lecturas, sin "En números" ni nombre del grupo). De una aprobada
+    escribe los bytes guardados al aprobarla, tal cual, salvo que edition.blocked_reason() la frene (hash roto,
+    aprobada antes de la versión pública, bytes con lecturas): entonces no la escribe y la devuelve en "skipped" con
+    ese motivo (su rango queda fuera del sitio). Una heredada se dibuja en versión pública. Después borra de ediciones/ las páginas de rango que no escribió en esta corrida (una descartada o un
     rango que quedó sin publicable no siguen en la carpeta que se sube); nada más. Devuelve
     {"files": [rutas escritas, index.html primero], "skipped": [{"id", "from", "to", "reason"}]}."""
     out = Path(out_dir)
@@ -733,20 +736,20 @@ def publish(con, chat_id: int, chat_name: str, out_dir) -> dict:
         name = f"ediciones/{r['date_from']}_a_{r['date_to']}.html"
         try:
             ed = edition.upgrade(json.loads(r["data"]))
-            if r["status"] == "aprobada" and not edition.hash_ok(r):
-                raise ValueError("el HTML guardado al aprobarla no coincide con su hash; aprobala de nuevo para volver a publicarla.")
+            if why := edition.blocked_reason(r):
+                raise ValueError(why)
         except ValueError as err:
             skipped.append({"id": r["id"], "from": r["date_from"], "to": r["date_to"], "reason": str(err)})
             continue
         if r["status"] == "aprobada":
             (out / name).write_bytes(edition.approved_bytes(r))
         else:
-            (out / name).write_text(newspaper_html.render(ed), encoding="utf-8")
+            (out / name).write_text(newspaper_html.render(ed, public=True), encoding="utf-8")
         written.append(name)
         entries.append({"href": name, "range_label": ed["range_label"], "year": ed["to"][:4], "thread": ed["thread"],
                         "headline": ed["lead"]["headline"], "articles": 1 + len(ed["articles"])})
     for f in (out / "ediciones").iterdir():
         if SITE_PAGE.fullmatch(f.name) and f"ediciones/{f.name}" not in written and f.is_file():
             f.unlink()
-    (out / "index.html").write_text(newspaper_html.render_index(chat_name, entries), encoding="utf-8")
+    (out / "index.html").write_text(newspaper_html.render_index(entries), encoding="utf-8")
     return {"files": ["index.html"] + written, "skipped": skipped}

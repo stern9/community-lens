@@ -2140,8 +2140,12 @@
           "type": "string"
         },
         "hash": {
-          "description": "\"sha256:<hex>\" de los bytes que se publican.",
+          "description": "\"sha256:<hex>\" de los bytes que se publican (la versión pública).",
           "type": "string"
+        },
+        "public": {
+          "description": "false: aprobada antes de la versión pública; no entra al sitio hasta reaprobarla.",
+          "type": "boolean"
         },
         "to": {
           "type": [
@@ -2158,7 +2162,8 @@
         "by",
         "via",
         "at",
-        "to"
+        "to",
+        "public"
       ],
       "type": "object"
     },
@@ -2173,6 +2178,13 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "blocked_reason": {
+          "description": "Por qué una aprobada no entra al sitio hasta reaprobarla (hash roto, de antes de la versión pública, con lecturas), para mostrar tal cual; null si nada la frena.",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "created_at": {
@@ -2198,6 +2210,13 @@
         "in_site": {
           "description": "Si publicar ahora la escribiría en el sitio.",
           "type": "boolean"
+        },
+        "leaks_readings": {
+          "description": "Si los bytes aprobados llevan lecturas de la conversación (no entra al sitio); null si no está aprobada.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "sent": {
           "$ref": "#/definitions/NewspaperSent"
@@ -2227,6 +2246,8 @@
         "approval",
         "hash_ok",
         "up_to_date",
+        "leaks_readings",
+        "blocked_reason",
         "in_site"
       ],
       "type": "object"

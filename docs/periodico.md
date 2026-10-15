@@ -14,6 +14,7 @@ El diagrama [`diagramas/periodico.html`](diagramas/periodico.html) muestra el re
 | Titulares, resúmenes, cronología, "hilo de la edición" | El modelo, leyendo el texto de cada página |
 | Lectura de la conversación (opcional) | El modelo, sobre mensajes seudonimizados |
 | Mensajes por tema dentro de esa lectura | Código, contando la agrupación que hizo el modelo |
+| Qué queda fuera del sitio: lecturas, "En números", nombre del grupo | Código: la versión pública (ver "Versión pública") |
 
 - **El modelo nunca escribe direcciones.** Se refiere a cada enlace por un número y el código pone la URL. Un
   número que no existe se descarta, así que una edición solo enlaza a lo que se compartió en el chat.
@@ -71,13 +72,13 @@ Las aplica `community_lens/newspaper.py`, igual para la pantalla y para la líne
 | `--lecturas … --confirmo-enviar-chat` | Lecturas de la conversación (`todos` o una lista); sin la confirmación no se envía nada |
 | `--salida` | Carpeta del sitio estático: `index.html` y `ediciones/<desde>_a_<hasta>.html` (la aprobada o heredada más reciente de cada rango). Una edición recién generada sin `--aprobar` no entra, y el comando lo dice |
 | `--solo-publicar` | No genera: reescribe el sitio con las ediciones aprobadas y heredadas |
-| `--borrador RUTA.html` | Escribe la vista previa con la banda "Borrador, no compartir": la de la edición recién generada o la de `--edicion N`. Crea la carpeta si falta. No toca el sitio |
+| `--borrador RUTA.html` | Escribe la vista previa: la versión pública (la que se publicaría) con la banda "Borrador, no compartir", de la edición recién generada o de `--edicion N`. Es lo que aprueba quien revisa. Crea la carpeta si falta. No toca el sitio |
 | `--edicion N` | Actúa sobre la edición N (tiene que ser del grupo indicado) en lugar de generar: con `--aprobar`, `--descartar`, `--recuperar` o `--borrador`. No importa, no llama al modelo ni descarga páginas. No se combina con `--archivo`, `--carpeta`, `--continuar`, `--dias`, `--desde` ni `--hasta` |
 | `--aprobar --aprobado-por TEXTO --canal TEXTO` | Aprueba `--edicion N` (borrador, heredada o aprobada otra vez) o, al generar, la recién generada. Quién y por qué canal son obligatorios. Al generar es **solo para uso manual, nunca en un guion programado**: aprobaría sin que nadie vea el borrador |
 | `--destino TEXTO` | Con `--aprobar`: adónde se publica; por defecto, la ruta de `--salida` si se pasó; sin ninguna de las dos, no se registra destino |
 | `--descartar` / `--recuperar` | Con `--edicion N`: la oculta y la saca del sitio en la próxima publicación / una descartada vuelve a borrador |
 | `--listar` | Imprime las ediciones del grupo, una por línea: id, rango, estado, quién y cuándo aprobó y si está en el sitio. No se combina con otras acciones ni con la generación |
-| `--json` | Imprime en la salida estándar un solo objeto JSON con el resultado (`status`, `detail`, `import`, `edition`, `warnings`, `site`, `draft`); los mensajes para personas van a la salida de error. `edition` tiene la forma de una fila de la lista de ediciones (estado, aprobación, `hash_ok`, `up_to_date`, `in_site`, lo enviado) y, al generar, los conteos; `site` trae `skipped`, las ediciones que no se escribieron y por qué; `draft`, la ruta de `--borrador`; `--listar` agrega `editions`. `status` vale `generada`, `publicada`, `aprobada`, `descartada`, `recuperada`, `vista_previa` (solo `--borrador`), `listado`, `sin_novedad`, `material_insuficiente`, `borrador_pendiente` o `error`. Nunca incluye texto de mensajes. Con código 2 no hay JSON: argparse rechaza los argumentos antes de que exista un resultado |
+| `--json` | Imprime en la salida estándar un solo objeto JSON con el resultado (`status`, `detail`, `import`, `edition`, `warnings`, `site`, `draft`); los mensajes para personas van a la salida de error. `edition` tiene la forma de una fila de la lista de ediciones (estado, aprobación, `hash_ok`, `up_to_date`, `leaks_readings`, `blocked_reason`, `in_site`, lo enviado) y, al generar, los conteos; `site` trae `skipped`, las ediciones que no se escribieron y por qué; `draft`, la ruta de `--borrador`; `--listar` agrega `editions`. `status` vale `generada`, `publicada`, `aprobada`, `descartada`, `recuperada`, `vista_previa` (solo `--borrador`), `listado`, `sin_novedad`, `material_insuficiente`, `borrador_pendiente` o `error`. Nunca incluye texto de mensajes. Con código 2 no hay JSON: argparse rechaza los argumentos antes de que exista un resultado |
 
 Códigos de salida, para que un guion decida sin leer los mensajes:
 
@@ -86,8 +87,8 @@ Códigos de salida, para que un guion decida sin leer los mensajes:
 - **1**: algo falló y hay que mirar: fecha inválida, grupo ambiguo, sin modelo configurado, falló el modelo, archivo
   inexistente, carpeta sin exportaciones, carpeta sin permisos, base bloqueada, `--edicion` de otro grupo… Si falló
   después de generar, la edición ya quedó guardada como borrador y el mensaje dice cómo aprobarla y publicarla.
-  También es 1 si una edición no se escribió en el sitio (una aprobada cuyos bytes no coinciden con su hash, o una
-  guardada que esta versión no sabe leer): el sitio se escribe igual con las demás, `detail` dice cuántas faltan con
+  También es 1 si una edición no se escribió en el sitio (una aprobada cuyos bytes no coinciden con su hash, una
+  aprobada antes de la versión pública o con lecturas en sus bytes, o una guardada que esta versión no sabe leer): el sitio se escribe igual con las demás, `detail` dice cuántas faltan con
   el motivo de cada una y `site.skipped` las lista.
 - **2**: argumentos mal usados o contradictorios (`--continuar` con un rango explícito, `--carpeta` con `--archivo` o
   sin `--grupo-id` ni `--grupo`, `--solo-publicar` sin `--salida` o con `--continuar`, `--edicion` con opciones de
@@ -100,15 +101,13 @@ Códigos de salida, para que un guion decida sin leer los mensajes:
   descartarlo). Se imprime como aviso y **no reescribe el sitio** aunque se pase `--salida`; para reescribirlo igual
   está `--solo-publicar`.
 
-Antes de publicar en un sitio abierto, tené presente que las lecturas resumen una conversación privada.
-
 ### Borrador, aprobación y publicación
 
 Toda edición recién generada, desde la pantalla o desde el comando, queda como **borrador**: no entra al sitio hasta
 que alguien la revisa y la aprueba. Los estados (`editions.status`, definidos en `community_lens/edition.py`):
 
 - **borrador**: recién generada, o recuperada. No se publica; su página lleva la banda "Borrador, no compartir".
-- **aprobada**: alguien la aprobó. Al aprobar se dibuja una sola vez, sin banda, y se guardan esos **bytes exactos**
+- **aprobada**: alguien la aprobó. Al aprobar se dibuja una sola vez su versión pública, sin banda, y se guardan esos **bytes exactos**
   (`editions.approved_html`) junto con su sha256 como registro de integridad, quién aprobó, por qué canal, cuándo
   (UTC) y adónde se publica (`editions.approval`). Aprobar de nuevo reemplaza bytes y registro; no hay historial.
 - **descartada**: oculta y fuera del sitio. Recuperarla la vuelve a borrador sin borrar su registro de aprobación.
@@ -128,6 +127,10 @@ En la pantalla, cada edición de "Ediciones guardadas" muestra su estado y sus a
 qué canal, "Descartar", "Recuperar"; las descartadas se ocultan hasta pedirlas. `/periodico/<id>` muestra la banda en
 un borrador o una descartada, y `/periodico/<id>?borrador=1` la fuerza en cualquier estado, para mandar a revisar de
 nuevo una aprobada sin cambiarle el estado; con banda, la descarga se llama `borrador_<desde>_a_<hasta>.html`.
+Eso es la edición completa, para quien corre la app. `/periodico/<id>?publico=1` (el enlace "Versión pública" de cada
+fila y de "Edición lista") muestra la versión pública, la que se publicaría, con banda según el estado; se combina con
+`?borrador=1`, y `?publico=1&borrador=1` es byte a byte lo que escribe `--borrador`. Sus descargas se llaman
+`publico_…` y `borrador_publico_…`.
 
 Sin pantalla, la receta es de dos comandos: el programado deja el borrador y su vista previa en una carpeta
 compartida, y cuando quien administra el grupo dice "publicar", una persona corre el segundo.
@@ -141,6 +144,36 @@ compartida, y cuando quien administra el grupo dice "publicar", una persona corr
 
 `--aprobar` también se puede pasar al generar, para aprobar al vuelo la edición recién generada. Es **solo para uso
 manual, nunca en un guion programado**: aprobaría una edición que nadie vio.
+
+#### Versión pública
+
+El sitio lleva solo la versión pública de cada edición; la pantalla y `/periodico/<id>` siguen mostrando la completa.
+Criterio: sale todo lo que describe la **conversación** y queda lo que viene de las **páginas enlazadas**, que el
+modelo redactó sin ver ningún mensaje. Es la misma plantilla (`newspaper_html.render(…, public=True)`), no una copia.
+
+| Elemento | De dónde sale | Versión pública | Por qué |
+|---|---|---|---|
+| Lecturas de la conversación (sección `id="lecturas"`) | Mensajes seudonimizados | Fuera | Resumen una conversación privada |
+| "En números" (mensajes, participantes, día más activo) | SQL sobre el chat | Fuera, la caja entera | Describe la actividad del grupo y no hace falta para leer la edición. Se sigue guardando en `data` para la pantalla |
+| Nombre del grupo (`<title>`, subtítulo, `index.html`) | Nombre del chat en WhatsApp | Fuera | Identifica un grupo privado; el dominio donde se publica ya dice de qué comunidad es |
+| Pie: "Los enlaces y las cifras salen del chat exportado" | Plantilla | Pasa a "Los enlaces y las fechas en que se compartieron salen del chat exportado" | Ya no hay cifras |
+| "Compartido 2 oct", rango de la edición, fecha de creación | Fechas del chat y de la edición | Queda | Es la razón de ser del periódico; no nombra a nadie |
+| Cuenta de una publicación en redes | La plataforma, al leer la ficha pública del post | Queda | Viene de la página, no del chat |
+| Quién redactó | Configuración | Queda | No es dato del grupo |
+| Enlaces: la URL tal como se compartió, sin `utm_*` | El chat | Queda | Es el contenido del periódico. Otros parámetros de seguimiento (`si=`, `igsh=`, `fbclid`…) no se quitan |
+| Titulares, resúmenes, hilo, cronología, fichas de redes y sitios, "No se pudo leer" | El modelo sobre las páginas, o cadenas fijas del código | Queda | No sale de ningún mensaje |
+
+Sin cronología, la versión pública no tiene columna lateral y la rejilla pasa a una columna. La barra de secciones
+nunca tuvo entrada de lecturas (solo artículos, redes y sitios), así que ahí no hay nada que quitar.
+
+Las aprobadas antes de la versión pública tienen congelada la edición completa (nombre del grupo, "En números" y, si
+las tenían, lecturas), así que **hay que aprobarlas de nuevo**: hasta entonces no entran al sitio y `publish()` borra
+su página de la carpeta local, pero la copia ya subida al hosting sigue ahí hasta que volvás a subir la carpeta. La
+lista de "Ediciones guardadas" y `--listar` las muestran con su motivo ("aprobada antes de la versión pública:
+reaprobala para publicarla", o "contiene lecturas de la conversación: reaprobala para publicarla" si sus bytes llevan
+la sección de lecturas), el mismo texto que trae `blocked_reason` en la fila, y el comando termina con código 1 con
+ese motivo en `site.skipped`. Las heredadas no hacen falta: se
+dibujan en su versión pública al publicar.
 
 ### Programarlo
 

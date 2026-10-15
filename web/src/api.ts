@@ -128,8 +128,9 @@ export const approveEdition = (id: number, req: ApproveRequest): Promise<Newspap
   sendJson(`/api/newspaper/editions/${id}/approve`, req);
 export const discardEdition = (id: number): Promise<NewspaperEdition> => sendJson(`/api/newspaper/editions/${id}/discard`, {});
 export const restoreEdition = (id: number): Promise<NewspaperEdition> => sendJson(`/api/newspaper/editions/${id}/restore`, {});
-/** `draft` fuerza la banda de borrador (para mandar a revisar una aprobada); sin él la decide el estado. */
-export const editionUrl = (id: number, download = false, draft = false): string => {
-  const q = qs({ download, borrador: draft ? 1 : null });
+/** `draft` fuerza la banda de borrador (para mandar a revisar una aprobada); sin él la decide el estado.
+ *  `publicVersion` pide la versión que se publica: sin lecturas, cifras ni nombre del grupo. */
+export const editionUrl = (id: number, download = false, draft = false, publicVersion = false): string => {
+  const q = qs({ download, borrador: draft ? 1 : null, publico: publicVersion ? 1 : null });
   return `/periodico/${id}` + (q ? "?" + q : "");
 };

@@ -154,7 +154,7 @@ function editionReady(r) {
         r.warnings.map((w) => h("p", { class: "error" }, w)),
         h("p", null, h("small", null, "Revisala antes de compartirla: los resúmenes son automáticos y pueden tener errores.")),
         r.status === "borrador" ? h("p", null, "Quedó como borrador: aprobala en Ediciones guardadas para que entre en el sitio.") : null,
-        h("div", { class: "actions" }, h("a", { href: api.editionUrl(r.id), target: "_blank", rel: "noopener", class: "btnlink" }, "Abrir el periódico"), h("a", { href: api.editionUrl(r.id, true), class: "btnlink" }, "Descargar HTML"))
+        h("div", { class: "actions" }, h("a", { href: api.editionUrl(r.id), target: "_blank", rel: "noopener", class: "btnlink" }, "Abrir el periódico"), h("a", { href: api.editionUrl(r.id, false, false, true), target: "_blank", rel: "noopener", class: "btnlink" }, "Versión pública"), h("a", { href: api.editionUrl(r.id, true), class: "btnlink" }, "Descargar HTML"))
     ];
 }
 /** "21 oct" de un instante UTC "AAAA-MM-DDTHH:MM:SSZ". */
@@ -168,8 +168,8 @@ function editionState(e) {
         case "heredada": return "heredada, sin registro de aprobación" + (e.in_site ? "" : " · reemplazada por una más nueva");
         case "aprobada": {
             const who = a && a.by ? `aprobada por ${a.by} (${a.via}, ${shortDay(a.at)})` : "aprobada";
-            if (e.hash_ok === false)
-                return `${who} · dañada: no coincide con su hash`;
+            if (e.blocked_reason)
+                return `${who} · ${e.blocked_reason}`;
             if (!e.in_site)
                 return `${who} · reemplazada por una más nueva`;
             return `${who} · en el sitio` + (e.up_to_date === false ? " · hay plantilla nueva: reaprobá para actualizarla" : "");
@@ -207,5 +207,5 @@ function editionRow(e, reload) {
     const actions = e.status === "descartada" ? [button("Recuperar", act(() => api.restoreEdition(e.id)))]
         : [button(e.status === "aprobada" ? "Aprobar de nuevo…" : "Aprobar…", askApproval), " ",
             button("Descartar", e.status === "aprobada" && e.in_site ? askDiscard : discard)];
-    return h("li", null, `${e.from} a ${e.to} · generada ${utcMinute(e.created_at)} UTC · ${e.editor.label}${e.sent.pages_tried.length ? ` (falló ${e.sent.pages_tried.join(" y ")})` : ""} · `, e.sent.chat_messages ? `${n(e.sent.chat_messages)} mensajes enviados a ${e.sent.chat_to.join(" y ")} · ` : "sin texto del chat enviado · ", h("b", null, editionState(e)), " · ", h("a", { href: api.editionUrl(e.id), target: "_blank", rel: "noopener", class: "btnlink" }, "Abrir"), " ", h("a", { href: api.editionUrl(e.id, true), class: "btnlink" }, "Descargar HTML"), " ", actions, form, msg);
+    return h("li", null, `${e.from} a ${e.to} · generada ${utcMinute(e.created_at)} UTC · ${e.editor.label}${e.sent.pages_tried.length ? ` (falló ${e.sent.pages_tried.join(" y ")})` : ""} · `, e.sent.chat_messages ? `${n(e.sent.chat_messages)} mensajes enviados a ${e.sent.chat_to.join(" y ")} · ` : "sin texto del chat enviado · ", h("b", null, editionState(e)), " · ", h("a", { href: api.editionUrl(e.id), target: "_blank", rel: "noopener", class: "btnlink" }, "Abrir"), " ", h("a", { href: api.editionUrl(e.id, false, false, true), target: "_blank", rel: "noopener", class: "btnlink" }, "Versión pública"), " ", h("a", { href: api.editionUrl(e.id, true), class: "btnlink" }, "Descargar HTML"), " ", actions, form, msg);
 }

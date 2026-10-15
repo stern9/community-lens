@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 CSS = Path(__file__).with_name("newspaper.css").read_text(encoding="utf-8")
 ICON = {"X": "𝕏", "YouTube": "▶️", "TikTok": "🎵", "Instagram": "📸", "LinkedIn": "💼", "Facebook": "📘", "Threads": "🧵",
         "Reddit": "👽", "Bluesky": "🦋"}
+READINGS_MARKER = b'<section class="fp-views" id="lecturas"'  # solo la plantilla lo produce: el texto entra escapado
 
 
 def _link(url: str, text: str, cls: str = "fp-a") -> str:
@@ -61,9 +62,11 @@ def _reading(r: Reading) -> str:
               "mensajes de este período.</p></section>")
 
 
-def render(d: Edition, draft: bool = False) -> str:
-    """La página de una edición. Con draft, la banda "Borrador, no compartir" arriba y "BORRADOR · " en el título;
-    sin draft, la misma página de siempre, byte a byte (es la que se guarda al aprobar)."""
+def render(d: Edition, *, draft: bool = False, public: bool = False) -> str:
+    """La página de una edición. Con draft, la banda "Borrador, no compartir" arriba y "BORRADOR · " en el título.
+    Con public, la versión que se publica (la que se guarda al aprobar): sin lo que describe la conversación, es
+    decir sin lecturas, sin la caja "En números" y sin el nombre del grupo; lo que viene de las páginas enlazadas
+    queda. Sin public, la versión completa que se ve en la app. Se combinan libremente."""
     lead, arts, socials, tools, readings, f = d["lead"], d["articles"], d["socials"], d["tools"], d["readings"], d["facts"]
     plural = lambda n, one, many: f"{n} {one if n == 1 else many}"
     nav = [f'<a href="#articulos">📰 {plural(1 + len(arts), "artículo", "artículos")}</a>']
@@ -82,17 +85,18 @@ def render(d: Edition, draft: bool = False) -> str:
                if f["busiest_day"] else "")
     facts_line = (f"Calculado sobre el chat: {f['messages']} mensajes de {f['participants']} participantes del {e(d['range_label'])}"
                   f"{busiest}.")
-    facts_box = f'<section class="fp-box"><h2>En números</h2><p class="fp-facts">{facts_line}</p></section>'
-    lead_html = ('<section class="fp-lead-grid" id="articulos"><article>'
+    facts_box = "" if public else f'<section class="fp-box"><h2>En números</h2><p class="fp-facts">{facts_line}</p></section>'
+    side = f'<aside class="fp-side">{timeline}{facts_box}</aside>' if timeline or facts_box else ""
+    lead_html = (f'<section class="fp-lead-grid{"" if side else " fp-solo"}" id="articulos"><article>'
                  + (f'<p class="fp-kicker">{e(lead["kicker"])}</p>' if lead["kicker"] else "")
                  + f'<h2 class="fp-lead-h">{_link(lead["url"], lead["headline"])}</h2>{_meta(lead, " · ")}'
                  + '<div class="fp-lead-body">' + "".join(f"<p>{e(s)}</p>" for s in lead["summary"]) + "</div>"
                  + (f'<p class="fp-note">{e(lead["note"])}</p>' if lead["note"] else "")
                  + _link(lead["url"], "Leer el artículo original →", "fp-more")
-                 + f'</article><aside class="fp-side">{timeline}{facts_box}</aside></section>')
+                 + f'</article>{side}</section>')
 
     views = ""
-    if readings:
+    if readings and not public:
         title = "Dos lecturas del período" if len(readings) == 2 else "Lecturas del período" if len(readings) > 2 else "Lectura del período"
         views = (f'<section class="fp-views" id="lecturas"><div class="fp-strip-h"><h2>{title}</h2></div>'
                  f'<div class="fp-views-row fp-n{min(len(readings), 3)}">' + "".join(_reading(r) for r in readings) + "</div></section>")
@@ -116,23 +120,26 @@ def render(d: Edition, draft: bool = False) -> str:
     band = '\n<p class="fp-draft">Borrador, no compartir</p>' if draft else ""
     editor = d["editor"]
     foot = (f"Resúmenes generados automáticamente con {e(editor['label'])} ({e(editor['model'])}) a partir de los enlaces compartidos. "
-            "Pueden contener errores; consultá la fuente original. Los enlaces y las cifras salen del chat exportado. "
+            "Pueden contener errores; consultá la fuente original. "
+            + ("Los enlaces y las fechas en que se compartieron salen del chat exportado. " if public else
+               "Los enlaces y las cifras salen del chat exportado. ") +
             "Hecho con Community Lens.")
+    group = "" if public else f" · {e(d['chat_name'])}"
+    sub = "" if public else f'\n<p class="fp-sub">{e(d["chat_name"])}</p>'
 
     return f"""<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{"BORRADOR · " if draft else ""}Lo que se compartió · {e(d['chat_name'])} · {e(d['range_label'])}</title>
+<title>{"BORRADOR · " if draft else ""}Lo que se compartió{group} · {e(d['range_label'])}</title>
 <style>html,body{{margin:0}}
 {CSS}</style>
 </head>
 <body><div class="fp-root"><div class="fp-wrap">{band}
 <header>
 <div class="fp-top"><span>{e(d['created_label'])}</span><span>Datos del {e(d['range_label'])}</span></div>
-<h1 class="fp-title">Lo que se compartió</h1>
-<p class="fp-sub">{e(d['chat_name'])}</p>
+<h1 class="fp-title">Lo que se compartió</h1>{sub}
 <nav class="fp-band" aria-label="Secciones">{''.join(nav)}</nav>
 {thread}
 </header>
@@ -147,8 +154,9 @@ def render(d: Edition, draft: bool = False) -> str:
 """
 
 
-def render_index(chat_name: str, entries: list[dict]) -> str:
-    """Portada del sitio: todas las ediciones, la más reciente primero."""
+def render_index(entries: list[dict]) -> str:
+    """Portada del sitio: todas las ediciones, la más reciente primero. Solo la usa publish(), así que siempre es
+    pública: no nombra al grupo."""
     rows = "".join(
         f'<article class="fp-art"><p class="fp-kicker">Del {e(x["range_label"])} de {e(x["year"])} · {x["articles"]} artículos</p>'
         f'<h3><a class="fp-a" href="{e(x["href"], quote=True)}">{e(x["headline"])}</a></h3>'
@@ -160,14 +168,13 @@ def render_index(chat_name: str, entries: list[dict]) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lo que se compartió · {e(chat_name)}</title>
+<title>Lo que se compartió</title>
 <style>html,body{{margin:0}}
 {CSS}</style>
 </head>
 <body><div class="fp-root"><div class="fp-wrap">
 <header>
 <h1 class="fp-title">Lo que se compartió</h1>
-<p class="fp-sub">{e(chat_name)}</p>
 <nav class="fp-band"><span>Todas las ediciones</span></nav>
 </header>
 <section class="fp-cols fp-index">{body}</section>

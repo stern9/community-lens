@@ -653,13 +653,15 @@ export type NewspaperEditionStatus = "borrador" | "aprobada" | "descartada" | "h
 
 /** Registro de la última aprobación. Descartar y recuperar no lo borran; reaprobar lo reemplaza. */
 export interface NewspaperApproval {
-  /** "sha256:<hex>" de los bytes que se publican. */
+  /** "sha256:<hex>" de los bytes que se publican (la versión pública). */
   hash: string;
   by: string;
   via: string;
   /** Instante UTC, "AAAA-MM-DDTHH:MM:SSZ". */
   at: string;
   to: string | null;
+  /** false: aprobada antes de la versión pública; no entra al sitio hasta reaprobarla. */
+  public: boolean;
 }
 
 export interface NewspaperEdition {
@@ -676,6 +678,11 @@ export interface NewspaperEdition {
   hash_ok: boolean | null;
   /** Si los bytes aprobados son los que dibujaría hoy la plantilla (si no, reaprobar los actualiza); null si no está aprobada. */
   up_to_date: boolean | null;
+  /** Si los bytes aprobados llevan lecturas de la conversación (no entra al sitio); null si no está aprobada. */
+  leaks_readings: boolean | null;
+  /** Por qué una aprobada no entra al sitio hasta reaprobarla (hash roto, de antes de la versión pública, con lecturas),
+   * para mostrar tal cual; null si nada la frena. */
+  blocked_reason: string | null;
   /** Si publicar ahora la escribiría en el sitio. */
   in_site: boolean;
 }

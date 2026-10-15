@@ -429,10 +429,13 @@ def test_edition_saved_with_the_previous_format_still_opens_and_publishes(client
     listed = c.get("/api/newspaper/editions", params={"chat_id": cid}).json()
     check("NewspaperEdition", listed, array=True)
     assert [e["id"] for e in listed] == [b, a] and listed[0]["sent"]["pages_tried"] == []
-    site = newspaper.publish(con, cid, "Demo", tmp_path / "sitio")
+    site = newspaper.publish(con, cid, tmp_path / "sitio")
     files = site["files"]
     assert site["skipped"] == [] and files == ["index.html", "ediciones/2026-10-01_a_2026-10-03.html", "ediciones/2026-09-01_a_2026-09-07.html"]
-    assert (tmp_path / "sitio" / files[1]).read_text(encoding="utf-8") == page.text
+    # Heredada con lecturas: se publica dibujada en versión pública, la misma que ?publico=1 y sin las lecturas.
+    public = c.get(f"/periodico/{a}", params={"publico": 1}).text
+    assert (tmp_path / "sitio" / files[1]).read_text(encoding="utf-8") == public != page.text
+    assert "La visión de" not in public and "En números" not in public and "Demo ·" not in public and "Titular 2 &lt;b&gt;" in public
     index = (tmp_path / "sitio" / "index.html").read_text(encoding="utf-8")
     assert "Del 1 al 3 de octubre de 2026 · 2 artículos" in index and "Del 1 al 7 de septiembre de 2026" in index
 
@@ -806,12 +809,13 @@ def test_old_database_gains_the_columns_and_its_editions_stay_published(tmp_path
     con = db.connect()
     assert {"status", "approval", "approved_html"} <= {r["name"] for r in con.execute("PRAGMA table_info(editions)")}
     assert tuple(con.execute("SELECT status, approval, approved_html FROM editions").fetchone()) == ("heredada", None, None)
-    site = newspaper.publish(con, 1, "Demo", tmp_path / "sitio")
+    site = newspaper.publish(con, 1, tmp_path / "sitio")
     assert site == {"files": ["index.html", "ediciones/2026-10-01_a_2026-10-03.html"], "skipped": []}
     published = (tmp_path / "sitio" / site["files"][1]).read_text(encoding="utf-8")
     with api_client() as c:
         page = c.get(f"/periodico/{eid}")
-        assert page.status_code == 200 and page.text == published and 'class="fp-draft"' not in page.text and "BORRADOR" not in page.text
+        assert page.status_code == 200 and 'class="fp-draft"' not in page.text and "BORRADOR" not in page.text
+        assert c.get(f"/periodico/{eid}", params={"publico": 1}).text == published  # el sitio lleva la versión pública
         assert _filename(c.get(f"/periodico/{eid}", params={"download": "true"})) == "periodico_2026-10-01_a_2026-10-03.html"
         row = _row(c, 1, eid)
         assert {k: row[k] for k in ("status", "approval", "hash_ok", "up_to_date", "in_site")} == {
@@ -836,7 +840,7 @@ def test_a_draft_is_not_published_and_its_page_says_so(client, tmp_path):
     eid = res["id"]
     assert res["status"] == "borrador" and _row(c, cid, eid)["status"] == "borrador" and not _row(c, cid, eid)["in_site"]
     con = connect()
-    site = newspaper.publish(con, cid, "Demo", tmp_path / "sitio")
+    site = newspaper.publish(con, cid, tmp_path / "sitio")
     assert site == {"files": ["index.html"], "skipped": []} and "Todavía no hay ediciones" in (tmp_path / "sitio" / "index.html").read_text()
     assert cli.periodico(["--grupo-id", str(cid), "--solo-publicar", "--salida", str(tmp_path / "otro")]) == 0
     assert list((tmp_path / "otro" / "ediciones").iterdir()) == []
@@ -854,10 +858,10 @@ def test_a_draft_is_not_published_and_its_page_says_so(client, tmp_path):
     row = r.json()
     check("NewspaperEdition", row)
     assert row == _row(c, cid, eid) and row["status"] == "aprobada" and (row["hash_ok"], row["up_to_date"], row["in_site"]) == (True, True, True)
-    page = c.get(f"/periodico/{eid}").text
-    assert 'class="fp-draft"' not in page and "BORRADOR" not in page
+    page = c.get(f"/periodico/{eid}", params={"publico": 1}).text
+    assert 'class="fp-draft"' not in page and "BORRADOR" not in page and 'class="fp-draft"' not in c.get(f"/periodico/{eid}").text
     assert _filename(c.get(f"/periodico/{eid}", params={"download": "true"})) == "periodico_2026-10-01_a_2026-10-03.html"
-    site = newspaper.publish(con, cid, "Demo", tmp_path / "sitio")
+    site = newspaper.publish(con, cid, tmp_path / "sitio")
     assert site == {"files": ["index.html", "ediciones/2026-10-01_a_2026-10-03.html"], "skipped": []}
     written = (tmp_path / "sitio" / site["files"][1]).read_bytes()
     assert written == con.execute("SELECT approved_html FROM editions WHERE id=?", (eid,)).fetchone()[0] == page.encode()
@@ -882,14 +886,14 @@ def test_published_bytes_are_the_approved_ones_and_damage_is_reported(client, tm
     approved = con.execute("SELECT approved_html FROM editions WHERE id=?", (a,)).fetchone()[0]
     # Plantilla nueva: el sitio sigue publicando los bytes aprobados y la lista avisa que reaprobar los actualiza.
     monkeypatch.setattr(newspaper_html, "CSS", newspaper_html.CSS + "\n.fp-nueva{color:red}")
-    assert newspaper.publish(con, cid, "Demo", site_dir)["skipped"] == []
+    assert newspaper.publish(con, cid, site_dir)["skipped"] == []
     assert page_file.read_bytes() == approved and b"fp-nueva" not in approved
     assert "fp-nueva" in c.get(f"/periodico/{a}").text  # la página de la app se dibuja con la plantilla de hoy
     row = _row(c, cid, a)
     assert (row["hash_ok"], row["up_to_date"], row["in_site"]) == (True, False, True)
     row = c.post(f"/api/newspaper/editions/{a}/approve", json=APPROVE).json()
     assert (row["hash_ok"], row["up_to_date"], row["in_site"]) == (True, True, True)
-    newspaper.publish(con, cid, "Demo", site_dir)
+    newspaper.publish(con, cid, site_dir)
     assert b"fp-nueva" in page_file.read_bytes()
 
     # Dos aprobadas del mismo rango: se publica solo la más nueva.
@@ -900,12 +904,12 @@ def test_published_bytes_are_the_approved_ones_and_damage_is_reported(client, tm
     (site_dir / "ediciones" / "2026-01-01_a_2026-01-07.html").write_text("vieja")
     (site_dir / "ediciones" / "notas.txt").write_text("mía")
     (site_dir / "ediciones" / "portada.html").write_text("mía")
-    newspaper.publish(con, cid, "Demo", site_dir)
+    newspaper.publish(con, cid, site_dir)
     assert sorted(p.name for p in (site_dir / "ediciones").iterdir()) == ["2026-10-01_a_2026-10-03.html", "notas.txt", "portada.html"]
 
     # Los bytes de la más nueva cambiaron por fuera: no se escriben, el rango sale del sitio (no vuelve la vieja).
     con.execute("UPDATE editions SET approved_html = approved_html || ? WHERE id=?", (b"<!-- otro -->", b))
-    site = newspaper.publish(con, cid, "Demo", site_dir)
+    site = newspaper.publish(con, cid, site_dir)
     assert site["files"] == ["index.html"] and [(s["id"], s["from"], s["to"]) for s in site["skipped"]] == [(b, "2026-10-01", "2026-10-03")]
     assert "hash" in site["skipped"][0]["reason"] and not page_file.exists()
     assert ((r := _row(c, cid, b))["hash_ok"], r["in_site"], _row(c, cid, a)["in_site"]) == (False, False, False)
@@ -916,13 +920,13 @@ def test_published_bytes_are_the_approved_ones_and_damage_is_reported(client, tm
     con.execute("UPDATE editions SET approved_html = CAST(approved_html AS TEXT) || 'x' WHERE id=?", (b,))
     assert _row(c, cid, b)["hash_ok"] is False
     assert c.post(f"/api/newspaper/editions/{b}/approve", json=APPROVE).json()["in_site"] is True
-    assert newspaper.publish(con, cid, "Demo", site_dir)["skipped"] == [] and page_file.exists()
+    assert newspaper.publish(con, cid, site_dir)["skipped"] == [] and page_file.exists()
     # Un registro de aprobación incompleto o ilegible (cambiado por SQL) es una aprobada dañada, nunca un 500.
     for raw in ("{}", '{"by": "Jaime", "via": "WhatsApp"}', "no es JSON", "[1]"):
         con.execute("UPDATE editions SET approval=? WHERE id=?", (raw, b))
         assert c.get("/api/newspaper/editions", params={"chat_id": cid}).status_code == 200, raw
         assert ((r := _row(c, cid, b))["hash_ok"], r["in_site"], r["approval"]["hash"]) == (False, False, ""), raw
-        assert [s["id"] for s in newspaper.publish(con, cid, "Demo", site_dir)["skipped"]] == [b], raw
+        assert [s["id"] for s in newspaper.publish(con, cid, site_dir)["skipped"]] == [b], raw
     assert c.post(f"/api/newspaper/editions/{b}/approve", json=APPROVE).json()["hash_ok"] is True
     con.close()
 
@@ -967,13 +971,13 @@ def test_discard_hides_and_restore_brings_back_a_draft(client, tmp_path):
     con = connect()
     eid = _generate(c, cid)
     assert c.post(f"/api/newspaper/editions/{eid}/approve", json=APPROVE).status_code == 200
-    assert newspaper.publish(con, cid, "Demo", tmp_path / "sitio")["files"] == ["index.html", "ediciones/2026-10-01_a_2026-10-03.html"]
+    assert newspaper.publish(con, cid, tmp_path / "sitio")["files"] == ["index.html", "ediciones/2026-10-01_a_2026-10-03.html"]
     r = c.post(f"/api/newspaper/editions/{eid}/discard")
     assert r.status_code == 200, r.text
     row = r.json()
     check("NewspaperEdition", row)
     assert (row["status"], row["hash_ok"], row["in_site"]) == ("descartada", None, False) and row["approval"]["by"] == "Jaime"
-    assert newspaper.publish(con, cid, "Demo", tmp_path / "sitio")["files"] == ["index.html"]
+    assert newspaper.publish(con, cid, tmp_path / "sitio")["files"] == ["index.html"]
     assert list((tmp_path / "sitio" / "ediciones").iterdir()) == []
     assert BAND in c.get(f"/periodico/{eid}").text
     for action, why in (("discard", "ya está descartada"), ("approve", "recuperala antes")):
@@ -983,7 +987,7 @@ def test_discard_hides_and_restore_brings_back_a_draft(client, tmp_path):
     check("NewspaperEdition", row)
     assert (row["status"], row["in_site"]) == ("borrador", False) and row["approval"]["by"] == "Jaime"  # el registro no se toca
     assert c.post(f"/api/newspaper/editions/{eid}/restore").status_code == 422
-    assert newspaper.publish(con, cid, "Demo", tmp_path / "sitio")["files"] == ["index.html"]
+    assert newspaper.publish(con, cid, tmp_path / "sitio")["files"] == ["index.html"]
     con.close()
 
 
@@ -1187,6 +1191,7 @@ def test_draft_preview_and_listing(no_network, setenv, tmp_path, con, capsys):
 
 
 def test_damaged_approved_edition_is_an_error_in_json(no_network, setenv, tmp_path, con, capsys):
+    from community_lens import edition
     setenv(ANTHROPIC_API_KEY="k-demo")
     site = tmp_path / "sitio"
     assert _run(tmp_path, "2026-10-08", *APPROVE_NOW, "--salida", str(site)) == 0
@@ -1196,8 +1201,218 @@ def test_damaged_approved_edition_is_an_error_in_json(no_network, setenv, tmp_pa
     capsys.readouterr()
     code, res, err = _json(capsys, "--grupo", "Semanal", "--solo-publicar", "--salida", str(site))
     assert (code, res["status"], res["site"]["files"]) == (1, "error", 1) and [s["id"] for s in res["site"]["skipped"]] == [eid]
-    assert res["detail"].startswith(f"1 edición(es) no se escribieron en el sitio: la {eid} (2026-10-01 a 2026-10-07): el HTML guardado")
-    assert f"la edición {eid}" in err
+    assert res["detail"].startswith(f"1 edición(es) no se escribieron en el sitio: la {eid} (2026-10-01 a 2026-10-07): {DAMAGED}")
+    assert f"la edición {eid}" in err and [e["blocked_reason"] for e in edition.listing(con, cid)] == [DAMAGED]
     # Reaprobar por comando lo arregla en la misma corrida.
     code, res, _ = _json(capsys, "--grupo", "Semanal", "--edicion", str(eid), *APPROVE_NOW, "--salida", str(site))
     assert (code, res["status"], res["edition"]["hash_ok"], res["site"]["skipped"]) == (0, "aprobada", True, [])
+
+
+# ------------------------------------------------ versión pública: el sitio no lleva nada del chat (#5) --
+
+SECRET, GROUP = "CENTINELA-LECTURA-7f3a", "Grupo Centinela 9c1d"
+LEAKS = (SECRET, GROUP, 'id="lecturas"', "En números")  # nada de esto puede llegar al sitio
+DAMAGED = "dañada: no coincide con su hash; reaprobala para publicarla"
+OLD_PUBLIC = "aprobada antes de la versión pública: reaprobala para publicarla"
+OLD_READINGS = "contiene lecturas de la conversación: reaprobala para publicarla"
+
+
+def sentinel_model(provider, system, user):
+    if system == newspaper.READING_SYSTEM:
+        return json.dumps({"parrafos": [f"{SECRET}: lo que se habló.", "Segundo párrafo."], "temas": [{"tema": "Datos", "mensajes": [1, 2]}]})
+    return fake_model(provider, system, user)
+
+
+@pytest.fixture
+def sentinel(no_network, setenv):
+    """Un grupo con nombre centinela cuya lectura lleva una frase centinela."""
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    no_network[1].answer = sentinel_model
+    with api_client() as c:
+        pv = c.post("/api/imports/preview", params={"filename": "chat.txt"}, content=CHAT).json()
+        cid = c.post("/api/imports/commit", json={"token": pv["token"], "file_name": "chat.txt", "date_order": "MDY", "chat_name": GROUP}).json()["chat_id"]
+        yield c, cid
+
+
+def _with_readings(c, cid) -> int:
+    r = c.post("/api/newspaper/editions", json={"chat_id": cid, "from": "2026-10-01", "to": "2026-10-03", "editor": "anthropic",
+                                                 "readers": ["anthropic"], "consent_chat": True})
+    assert r.status_code == 200 and r.json()["readings"] == 1, r.text
+    return r.json()["id"]
+
+
+def _site_pages(site_dir) -> dict[str, str]:
+    return {p.relative_to(site_dir).as_posix(): p.read_text(encoding="utf-8") for p in sorted(site_dir.rglob("*.html"))}
+
+
+def _freeze_old_approval(con, eid, page: bytes, **extra) -> None:
+    """Deja una aprobada como la dejaba la app antes de la versión pública: bytes dados, hash correcto y, salvo que
+    extra diga otra cosa, un registro sin "public"."""
+    from community_lens import edition
+    approval = {"hash": edition.page_hash(page), "by": "Jaime", "via": "WhatsApp", "at": "2026-10-10T18:00:00Z", "to": None, **extra}
+    con.execute("UPDATE editions SET status='aprobada', approval=?, approved_html=? WHERE id=?", (json.dumps(approval), page, eid))
+
+
+def test_the_site_carries_nothing_from_the_conversation(sentinel, tmp_path):
+    from community_lens import edition, newspaper_html
+    from community_lens.db import connect
+    c, cid = sentinel
+    con = connect()
+    eid = _with_readings(c, cid)
+    ed = edition.load(con, eid)
+    assert ed["chat_name"] == GROUP and SECRET in ed["readings"][0]["paragraphs"][0]
+    row = c.post(f"/api/newspaper/editions/{eid}/approve", json=APPROVE).json()
+    check("NewspaperEdition", row)
+    assert (row["approval"]["public"], row["leaks_readings"], row["hash_ok"], row["up_to_date"], row["in_site"]) == (True, False, True, True, True)
+    site = newspaper.publish(con, cid, tmp_path / "sitio")
+    assert site == {"files": ["index.html", "ediciones/2026-10-01_a_2026-10-03.html"], "skipped": []}
+    pages = _site_pages(tmp_path / "sitio")
+    assert list(pages) == ["ediciones/2026-10-01_a_2026-10-03.html", "index.html"]
+    for name, text in pages.items():
+        for leak in LEAKS:
+            assert leak not in text, (name, leak)
+        assert "Titular " in text, name
+    page = pages["ediciones/2026-10-01_a_2026-10-03.html"]
+    assert "Compartido 1 oct" in page and "<title>Lo que se compartió · 1 al 3 de octubre</title>" in page and 'class="fp-sub"' not in page
+    assert "Cronología reciente" in page and "Los enlaces y las fechas en que se compartieron salen del chat exportado." in page
+    assert "<title>Lo que se compartió</title>" in pages["index.html"]  # la portada tampoco nombra al grupo
+    # Lo que se aprobó y se hasheó es la versión pública, y es lo que se escribió.
+    stored = con.execute("SELECT approval, approved_html FROM editions WHERE id=?", (eid,)).fetchone()
+    written = (tmp_path / "sitio" / site["files"][1]).read_bytes()
+    assert written == stored["approved_html"] == newspaper_html.render(ed, public=True).encode()
+    assert json.loads(stored["approval"])["hash"] == edition.page_hash(written) and json.loads(stored["approval"])["public"] is True
+    con.close()
+
+
+def test_the_screen_shows_everything_and_publico_shows_what_is_published(sentinel):
+    from community_lens import edition, newspaper_html
+    from community_lens.db import connect
+    c, cid = sentinel
+    eid = _with_readings(c, cid)
+    url = f"/periodico/{eid}"
+    full = c.get(url).text
+    assert all(x in full for x in (SECRET, GROUP, "En números", "Los enlaces y las cifras salen del chat exportado."))
+    assert newspaper_html.READINGS_MARKER.decode() in full  # el marcador es exactamente lo que dibuja la plantilla
+    public = c.get(url, params={"publico": 1}).text
+    assert not any(leak in public for leak in LEAKS) and "Compartido" in public
+    assert _filename(c.get(url, params={"publico": 1, "download": "true"})) == "borrador_publico_2026-10-01_a_2026-10-03.html"  # es borrador
+    assert c.post(f"/api/newspaper/editions/{eid}/approve", json=APPROVE).status_code == 200
+    names = {}
+    for params in ({}, {"publico": 1}, {"borrador": 1}, {"publico": 1, "borrador": 1}):
+        page = c.get(url, params=params).text
+        assert (BAND in page) == ("borrador" in params) and (SECRET in page) == ("publico" not in params), params
+        assert (GROUP in page) == ("En números" in page) == ("publico" not in params), params
+        names[tuple(params)] = _filename(c.get(url, params={**params, "download": "true"}))
+    assert names == {(): "periodico_2026-10-01_a_2026-10-03.html", ("publico",): "publico_2026-10-01_a_2026-10-03.html",
+                     ("borrador",): "borrador_2026-10-01_a_2026-10-03.html",
+                     ("publico", "borrador"): "borrador_publico_2026-10-01_a_2026-10-03.html"}
+    # Sin cronología, la versión pública no tiene columna lateral: la rejilla pasa a una columna.
+    con = connect()
+    ed = edition.load(con, eid) | {"timeline": []}
+    con.close()
+    solo = newspaper_html.render(ed, public=True)
+    assert '<section class="fp-lead-grid fp-solo" id="articulos">' in solo and "<aside" not in solo and ".fp-lead-grid.fp-solo{" in solo
+    assert '<section class="fp-lead-grid" id="articulos">' in newspaper_html.render(ed) and "En números" in newspaper_html.render(ed)
+
+
+def test_inherited_edition_with_readings_is_published_without_them(sentinel, tmp_path):
+    from community_lens import edition
+    from community_lens.db import connect
+    c, cid = sentinel
+    con = connect()
+    data = edition.load(con, _with_readings(c, cid)) | {"from": "2026-09-01", "to": "2026-09-07"}
+    eid = stored_edition(con, cid, data, {"pages_to": "Claude", "pages": 3})
+    assert con.execute("SELECT status FROM editions WHERE id=?", (eid,)).fetchone()[0] == "heredada"
+    assert SECRET in c.get(f"/periodico/{eid}").text
+    site = newspaper.publish(con, cid, tmp_path / "sitio")
+    assert site == {"files": ["index.html", "ediciones/2026-09-01_a_2026-09-07.html"], "skipped": []}
+    for name, text in _site_pages(tmp_path / "sitio").items():
+        assert not any(leak in text for leak in LEAKS), name
+    assert _row(c, cid, eid)["leaks_readings"] is None and _row(c, cid, eid)["in_site"] is True
+    con.close()
+
+
+def test_approved_before_the_public_version_with_readings_waits_for_reapproval(sentinel, tmp_path, capsys):
+    from community_lens import edition, newspaper_html
+    from community_lens.db import connect
+    c, cid = sentinel
+    con = connect()
+    site_dir = tmp_path / "sitio"
+    eid = _with_readings(c, cid)
+    _freeze_old_approval(con, eid, newspaper_html.render(edition.load(con, eid)).encode())
+    row = _row(c, cid, eid)
+    assert (row["approval"]["public"], row["hash_ok"], row["leaks_readings"], row["in_site"]) == (False, True, True, False)
+    assert newspaper.publish(con, cid, site_dir)["skipped"] == [{"id": eid, "from": "2026-10-01", "to": "2026-10-03", "reason": OLD_PUBLIC}]
+    capsys.readouterr()
+    code, res, err = _json(capsys, "--grupo-id", str(cid), "--solo-publicar", "--salida", str(site_dir))
+    assert code == 1 and [s["reason"] for s in res["site"]["skipped"]] == [OLD_PUBLIC] and OLD_PUBLIC in err
+    assert not any(SECRET in t for t in _site_pages(site_dir).values()) and not (site_dir / "ediciones" / "2026-10-01_a_2026-10-03.html").exists()
+    # Reaprobarla la arregla: queda pública y vuelve al sitio, sin la lectura.
+    code, res, _ = _json(capsys, "--grupo-id", str(cid), "--edicion", str(eid), "--aprobar", "--aprobado-por", "Jaime", "--canal", "WhatsApp",
+                         "--salida", str(site_dir))
+    assert (code, res["edition"]["approval"]["public"], res["edition"]["leaks_readings"], res["edition"]["in_site"]) == (0, True, False, True)
+    assert res["site"]["skipped"] == []
+    pages = _site_pages(site_dir)
+    assert "ediciones/2026-10-01_a_2026-10-03.html" in pages and not any(leak in t for t in pages.values() for leak in LEAKS)
+    con.close()
+
+
+def test_approved_before_the_public_version_without_readings_and_the_second_defense(sentinel, tmp_path):
+    from community_lens import edition, newspaper_html
+    from community_lens.db import connect
+    c, cid = sentinel
+    con = connect()
+    plain = _generate(c, cid)
+    _freeze_old_approval(con, plain, newspaper_html.render(edition.load(con, plain)).encode())
+    row = _row(c, cid, plain)
+    assert (row["approval"]["public"], row["hash_ok"], row["leaks_readings"], row["blocked_reason"], row["in_site"]) == (False, True, False, OLD_PUBLIC, False)
+    assert [s["reason"] for s in newspaper.publish(con, cid, tmp_path / "sitio")["skipped"]] == [OLD_PUBLIC]
+    headline = edition.load(con, plain)["lead"]["headline"]
+    assert headline not in (tmp_path / "sitio" / "index.html").read_text(encoding="utf-8")  # salteada: la portada no la anuncia
+    # Segunda defensa: aunque el registro diga public, bytes con lecturas no entran (otro rango, para no taparla).
+    leaky = _generate(c, cid, "2026-10-02", "2026-10-03")
+    data = edition.load(con, _with_readings(c, cid))
+    _freeze_old_approval(con, leaky, newspaper_html.render(data).encode(), public=True)
+    row = _row(c, cid, leaky)
+    assert (row["approval"]["public"], row["hash_ok"], row["leaks_readings"], row["blocked_reason"], row["in_site"]) == (True, True, True, OLD_READINGS, False)
+    site = newspaper.publish(con, cid, tmp_path / "sitio")
+    assert {s["id"]: s["reason"] for s in site["skipped"]} == {plain: OLD_PUBLIC, leaky: OLD_READINGS} and site["files"] == ["index.html"]
+    assert edition.blocked_reason(con.execute("SELECT * FROM editions WHERE id=?", (leaky,)).fetchone()) == OLD_READINGS
+    # "public" tiene que ser el booleano true: el texto "true" (cambiado por SQL) no la abre, y queda fuera igual.
+    stringy = _generate(c, cid, "2026-10-01", "2026-10-02")
+    _freeze_old_approval(con, stringy, newspaper_html.render(data).encode(), public="true")
+    row = _row(c, cid, stringy)
+    assert (row["approval"]["public"], row["hash_ok"], row["leaks_readings"], row["blocked_reason"], row["in_site"]) == (False, True, True, OLD_PUBLIC, False)
+    site = newspaper.publish(con, cid, tmp_path / "sitio")
+    assert {s["id"]: s["reason"] for s in site["skipped"]} == {plain: OLD_PUBLIC, leaky: OLD_READINGS, stringy: OLD_PUBLIC} and site["files"] == ["index.html"]
+    assert not any(leak in t for t in _site_pages(tmp_path / "sitio").values() for leak in LEAKS)
+    con.close()
+
+
+def test_draft_file_is_the_public_version_with_the_band(sentinel, tmp_path, capsys):
+    """Caso 3: lo que --borrador deja en la carpeta compartida es lo que se publicaría, con banda; sin la lectura ni el
+    nombre del grupo, y byte a byte lo mismo que ?publico=1&borrador=1."""
+    c, cid = sentinel
+    eid = _with_readings(c, cid)
+    preview = tmp_path / "compartida" / "borrador.html"
+    code, res, err = _json(capsys, "--grupo-id", str(cid), "--edicion", str(eid), "--borrador", str(preview))
+    assert (code, res["status"], res["draft"]) == (0, "vista_previa", str(preview)) and "versión pública" in err
+    page = preview.read_bytes()
+    assert b'class="fp-draft"' in page and SECRET.encode() not in page and GROUP.encode() not in page
+    assert page == c.get(f"/periodico/{eid}", params={"publico": 1, "borrador": 1}).content
+
+
+def test_listing_says_why_an_approved_edition_waits_for_reapproval(sentinel, capsys):
+    from community_lens import cli, edition, newspaper_html
+    from community_lens.db import connect
+    c, cid = sentinel
+    con = connect()
+    old = _generate(c, cid)
+    _freeze_old_approval(con, old, newspaper_html.render(edition.load(con, old)).encode())  # sin "public"
+    leaky = _generate(c, cid, "2026-10-02", "2026-10-03")
+    _freeze_old_approval(con, leaky, newspaper_html.render(edition.load(con, _with_readings(c, cid))).encode(), public=True)
+    con.close()
+    capsys.readouterr()
+    assert cli.periodico(["--grupo-id", str(cid), "--listar"]) == 0
+    lines = {int(ln.split()[0]): ln for ln in capsys.readouterr().out.splitlines()}
+    assert lines[old].endswith(f" · fuera del sitio · {OLD_PUBLIC}") and lines[leaky].endswith(f" · fuera del sitio · {OLD_READINGS}")

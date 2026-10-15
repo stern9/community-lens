@@ -45,8 +45,11 @@ Qué sale de la máquina, y cuándo, está en la tabla "Privacidad" del [README]
   arrancar la app y pasada una hora.
 - Cada edición guarda qué se envió y a quién (`editions.sent`) y, cuando se aprueba, quién la aprobó, cuándo, por
   qué canal y adónde va (`editions.approval`, texto que escribe quien aprueba; no se registra en los logs). Al
-  aprobarla se guardan también los bytes exactos de la página que se publica (`editions.approved_html`) y su sha256:
-  publicar escribe esos bytes tal cual y, si ya no coinciden con el hash, no los escribe y lo avisa.
+  aprobarla se guardan también los bytes exactos de la página que se publica (`editions.approved_html`) y su sha256.
+  Esos bytes son la versión pública: sin las lecturas de la conversación, sin el nombre del grupo y sin las cifras
+  del chat; la pantalla de la app sigue mostrando la edición completa. Publicar escribe esos bytes tal cual y no los
+  escribe, avisándolo, si ya no coinciden con el hash, si se aprobaron antes de que existiera la versión pública o si
+  llevan lecturas de la conversación: en los dos últimos casos hay que aprobarla de nuevo.
 
 ## Secretos y registros
 
