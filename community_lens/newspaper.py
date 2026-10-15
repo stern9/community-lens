@@ -44,6 +44,14 @@ class NewspaperError(ValueError):
     pass
 
 
+class NoNews(NewspaperError):
+    """No hay días nuevos que cubrir: la última edición ya llega hasta el último día completo."""
+
+
+class NoMaterial(NewspaperError):
+    """El rango existe pero no trae el mínimo de artículos: no se genera y el material queda para después."""
+
+
 def _base(domain: str) -> str:
     d = domain.lower().removeprefix("www.").removeprefix("m.").removeprefix("vt.").removeprefix("vm.").removeprefix("mobile.")
     return d
@@ -115,6 +123,24 @@ def resolve_range(con, chat_id: int, d_from: str | None = None, d_to: str | None
     d_from = valid_day(d_from) if d_from else (date.fromisoformat(d_to) - timedelta(days=days - 1)).isoformat()
     if d_from > d_to:
         raise NewspaperError("El rango de fechas está invertido.")
+    return d_from, d_to
+
+
+def continue_range(con, chat_id: int) -> tuple[str, str]:
+    """Rango que sigue a la última edición guardada del grupo: desde el día siguiente a su fin hasta el último día
+    completo, que es el anterior al último día con mensajes (ese suele estar a medias cuando se exporta). Sin
+    ediciones previas, los DEFAULT_DAYS días que terminan en ese último día completo: así la primera edición
+    tampoco toma el día parcial y la siguiente lo cubre entero. Todo con fechas del chat, nunca con el reloj de
+    la máquina. Si no hay días nuevos, NoNews."""
+    last = last_day(con, chat_id)
+    if not last:
+        raise NewspaperError("El grupo no tiene mensajes.")
+    d_to = (date.fromisoformat(last) - timedelta(days=1)).isoformat()
+    covered = edition.last_covered_day(con, chat_id)
+    d_from = (date.fromisoformat(covered) + timedelta(days=1) if covered
+              else date.fromisoformat(d_to) - timedelta(days=DEFAULT_DAYS - 1)).isoformat()
+    if d_from > d_to:
+        raise NoNews(f"Sin novedad: la última edición ya cubre hasta el {covered}.")
     return d_from, d_to
 
 
@@ -594,8 +620,9 @@ ALL = "all"    # dan su lectura todos los proveedores configurados
 
 def generate(con, chat_id: int, chat_name: str, d_from: str | None, d_to: str | None, *, editor: str, readers: list[str], consent_chat: bool,
              order: str = "recent", max_articles: int | None = None, net: Net | None = None,
-             transport: llm.Transport | None = None) -> dict:
-    """Arma y guarda una edición. `net` y `transport` son quienes tocan la red (páginas y modelos); por defecto, los reales."""
+             transport: llm.Transport | None = None, min_articles: int = 1) -> dict:
+    """Arma y guarda una edición. `net` y `transport` son quienes tocan la red (páginas y modelos); por defecto, los reales.
+    Con menos de `min_articles` artículos en el rango no se genera (NoMaterial) y no sale nada de la máquina."""
     d_from, d_to = resolve_range(con, chat_id, d_from, d_to)
     cap = article_limit(max_articles)
     if readers and not consent_chat:
@@ -606,8 +633,11 @@ def generate(con, chat_id: int, chat_name: str, d_from: str | None, d_to: str | 
         raise llm.LLMError("No hay ningún modelo configurado en .env.")
     read_by = llm.providers() if ALL in readers else [llm.get(r) for r in dict.fromkeys(readers)]
     c = candidates(con, chat_id, d_from, d_to, order, LIMITS["article"][1])
-    if not c["items"]["article"]:
-        raise NewspaperError("No hay artículos compartidos en ese rango.")
+    n_articles = c["total"]["article"]
+    if not n_articles:
+        raise NoMaterial("No hay artículos compartidos en ese rango.")
+    if n_articles < min_articles:
+        raise NoMaterial(f"El rango trae {n_articles} artículo(s) y hacen falta {min_articles}: no se genera; el material queda para la próxima corrida.")
     # Se leen unos artículos de reserva: si uno falla (muro de pago, enlace caído), entra el siguiente del rango.
     pool = c["items"]["article"][:min(cap + RESERVE, LIMITS["article"][1])]
     others = c["items"]["social"] + c["items"]["tool"]
@@ -625,6 +655,8 @@ def generate(con, chat_id: int, chat_name: str, d_from: str | None, d_to: str | 
         it["id"] = n
 
     prompt, errors = editor_input(items, pages), []
+    if n_articles > len(chosen):  # `chosen` incluye los que no se pudieron leer: esos no "quedaron fuera", están en "No se pudo leer"
+        errors.append(f"{n_articles - len(chosen)} de los {n_articles} artículos del rango quedaron fuera por el tope de {cap}.")
     for n, ed in enumerate(editors, 1):
         try:
             body = assemble(llm.complete_json(ed, EDITOR_SYSTEM, prompt, transport), items, pages)

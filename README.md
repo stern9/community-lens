@@ -79,7 +79,9 @@ Sin pantalla, para automatizarlo:
 Importa la exportación, genera la edición de los 7 días que terminan en el último día con mensajes y escribe
 `sitio/index.html` más una página por edición en `sitio/ediciones/`. Es solo HTML: se sube a cualquier hosting
 estático. Lo que subás es la edición completa: si generaste lecturas de la conversación, van incluidas. `.venv/bin/python -m community_lens periodico --help` lista todas las opciones (rango, modelo, lecturas de la
-conversación, publicar sin generar). Más detalle en [docs/periodico.md](docs/periodico.md).
+conversación, publicar sin generar). Para programarlo, `--carpeta` toma la exportación más nueva de una carpeta,
+`--continuar` cubre solo los días posteriores a la última edición, y el código de salida distingue "nada nuevo" (3)
+de "falló" (1). Más detalle en [docs/periodico.md](docs/periodico.md).
 
 ## Privacidad
 
@@ -146,4 +148,4 @@ Los diagramas están hechos con [Archify](https://github.com/tt-a1i/archify) (li
 Community Lens se publica bajo la [licencia MIT](LICENSE). Las librerías copiadas en `web/vendor/` conservan la suya
 (ver [web/vendor/README.md](web/vendor/README.md)).
 
-[@stern9](https://github.com/stern9): 🤖 Generated with [Claude Code](https://claude.com/claude-code) (Claude Opus 5.5) · ☀️ Y Sol contraataca, desde [Codex](https://openai.com/codex/).
+[@stern9](https://github.com/stern9): 🤖 Generated with [Claude Code](https://claude.com/claude-code) (Claude Opus 5.5 y Claude Fable 5.1) · ☀️ Y Sol contraataca, desde [Codex](https://openai.com/codex/).

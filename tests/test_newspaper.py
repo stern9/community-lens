@@ -452,3 +452,265 @@ def test_new_editions_declare_their_format_and_do_not_store_the_page(client):
     # Lo único nuevo respecto de la forma anterior es el número de formato.
     v1 = json.loads((__import__("conftest").FIX / "edition_v1.json").read_text(encoding="utf-8"))["data"]
     assert {k: v for k, v in data.items() if k not in ("format", "created_label")} == {k: v for k, v in v1.items() if k != "created_label"}
+
+
+# ------------------------------------------------------- --continuar (#29) --
+# Exportaciones acumulativas, como las de WhatsApp: cada una trae el chat desde el principio hasta el día en
+# que se exporta. Cada día tiene un artículo de mañana y otro de noche, así el último día queda a medias.
+
+def _export(last: str, first: str = "2026-10-01", per_day: int = 2) -> bytes:
+    from datetime import date, timedelta
+    d, end, lines = date.fromisoformat(first), date.fromisoformat(last), []
+    while d <= end:
+        for hour in ("9:00:00 AM", "8:00:00 PM")[:per_day]:
+            lines.append(f"[{d.month}/{d.day}/{d:%y}, {hour}] ~ Ana Demo: lean https://example.org/notas/{d}-{hour[0]}")
+        d += timedelta(days=1)
+    return ("\n".join(lines) + "\n").encode()
+
+
+def _covered(con, cid) -> list[str]:
+    """Todos los días cubiertos por las ediciones guardadas, con repeticiones si las hubiera."""
+    from datetime import date, timedelta
+    days = []
+    for e in newspaper.editions(con, cid):
+        d = date.fromisoformat(e["from"])
+        while d <= date.fromisoformat(e["to"]):
+            days.append(d.isoformat())
+            d += timedelta(days=1)
+    return sorted(days)
+
+
+def _run(tmp_path, last: str, *extra: str, **kw) -> int:
+    from community_lens import cli
+    f = tmp_path / f"export_{last}.txt"
+    f.write_bytes(_export(last, **kw))
+    return cli.periodico(["--archivo", str(f), "--grupo", "Semanal", "--orden-fecha", "MDY", "--continuar", *extra])
+
+
+def test_continue_range_follows_the_last_edition(con):
+    from conftest import do_import
+
+    from community_lens import edition
+    cid = do_import(con, "c.txt", data=_export("2026-10-20"), date_order="MDY")["chat_id"]
+    # Sin ediciones: 7 días que terminan el día anterior al último con mensajes (ese está a medias).
+    assert newspaper.continue_range(con, cid) == ("2026-10-13", "2026-10-19")
+    edition.save(con, cid, {"from": "2026-10-01", "to": "2026-10-09", "editor": {}}, {})
+    edition.save(con, cid, {"from": "2026-10-03", "to": "2026-10-05", "editor": {}}, {})  # cuenta la que llega más lejos
+    assert newspaper.continue_range(con, cid) == ("2026-10-10", "2026-10-19")
+    edition.save(con, cid, {"from": "2026-10-10", "to": "2026-10-19", "editor": {}}, {})
+    with pytest.raises(newspaper.NoNews, match="Sin novedad: la última edición ya cubre hasta el 2026-10-19"):
+        newspaper.continue_range(con, cid)
+
+
+def test_continue_leaves_no_gaps_or_repeats(no_network, setenv, tmp_path, con, capsys):
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    # Una semana, otra, se salta una, y dos exportaciones seguidas.
+    assert _run(tmp_path, "2026-10-08") == 0
+    assert _run(tmp_path, "2026-10-15") == 0
+    assert _run(tmp_path, "2026-10-29") == 0
+    out = capsys.readouterr().out
+    assert "(2026-10-01 a 2026-10-07)" in out and "(2026-10-08 a 2026-10-14)" in out and "(2026-10-15 a 2026-10-28)" in out
+    # Al día siguiente solo hay un día completo nuevo con 2 artículos: no alcanza y queda para la próxima.
+    assert _run(tmp_path, "2026-10-30") == 3
+    assert "hacen falta 3" in capsys.readouterr().out
+    assert _run(tmp_path, "2026-10-31") == 0
+    assert "(2026-10-29 a 2026-10-30)" in capsys.readouterr().out
+    cid = newspaper.find_chat(con, "Semanal")["id"]
+    days = _covered(con, cid)
+    assert len(days) == len(set(days)) == 30 and (days[0], days[-1]) == ("2026-10-01", "2026-10-30")
+
+
+def test_same_export_twice_does_not_call_the_model_again(no_network, setenv, tmp_path, con, capsys):
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    net, models = no_network
+    assert _run(tmp_path, "2026-10-08") == 0
+    calls, pages = len(models.requests), len(net.requests)
+    assert calls > 0 and pages > 0
+    capsys.readouterr()
+    assert _run(tmp_path, "2026-10-08") == 3
+    io = capsys.readouterr()
+    assert "ya estaba importado" in io.out and "Aviso: Sin novedad: la última edición ya cubre hasta el 2026-10-07" in io.out and not io.err
+    # La promesa es doble: ni el modelo ni las páginas; no sale nada de la máquina.
+    assert len(models.requests) == calls and len(net.requests) == pages
+    assert len(newspaper.editions(con, newspaper.find_chat(con, "Semanal")["id"])) == 1
+
+
+def test_continue_needs_the_minimum_of_articles(no_network, setenv, tmp_path, con, capsys):
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    net, models = no_network
+    assert _run(tmp_path, "2026-10-02") == 3  # el único día completo trae 2 artículos
+    assert "Aviso: El rango trae 2 artículo(s) y hacen falta 3" in capsys.readouterr().out
+    # Ni el modelo ni las páginas: no sale nada de la máquina, y no se guarda nada.
+    assert models.requests == net.requests == [] and newspaper.editions(con, newspaper.find_chat(con, "Semanal")["id"]) == []
+
+
+def test_articles_over_the_cap_are_reported(no_network, setenv, con):
+    from conftest import do_import
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    cid = do_import(con, "c.txt", data=_export("2026-10-07"), date_order="MDY")["chat_id"]
+    res = newspaper.generate(con, cid, "Demo", "2026-10-01", "2026-10-07", editor="auto", readers=[], consent_chat=False)
+    assert "6 de los 14 artículos del rango quedaron fuera por el tope de 8." in res["warnings"]
+    res = newspaper.generate(con, cid, "Demo", "2026-10-01", "2026-10-04", editor="auto", readers=[], consent_chat=False)
+    assert not any("quedaron fuera" in w for w in res["warnings"])
+
+
+def test_continue_refuses_an_explicit_range(client, capsys):
+    from community_lens import cli
+    for extra in (["--desde", "2026-10-01"], ["--hasta", "2026-10-02"], ["--dias", "7"]):
+        with pytest.raises(SystemExit) as exit_:
+            cli.periodico(["--grupo", "Demo", "--continuar", *extra])
+        assert exit_.value.code == 2 and "no se combina con --dias, --desde ni --hasta" in capsys.readouterr().err
+
+
+# ---------------------------------- códigos de salida, --carpeta y --json (#32, #10) --
+
+def _folder(tmp_path, *lasts: str, name: str = "exportaciones"):
+    """Carpeta con una exportación por fecha de corte; la fecha de modificación sigue el orden en que se pasan."""
+    import os
+    d = tmp_path / name
+    d.mkdir(exist_ok=True)
+    for n, last in enumerate(lasts):
+        f = d / f"WhatsApp Chat {last}.txt"
+        f.write_bytes(_export(last))
+        os.utime(f, (1_800_000_000 + n * 3600,) * 2)
+    return d
+
+
+def test_nothing_to_publish_exits_3_and_leaves_the_site_alone(no_network, setenv, tmp_path, con, capsys):
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    site = tmp_path / "sitio"
+    assert _run(tmp_path, "2026-10-02", "--salida", str(site)) == 3  # material insuficiente
+    io = capsys.readouterr()
+    assert "Aviso: El rango trae 2 artículo(s)" in io.out and "No se pudo" not in io.err + io.out
+    assert not (site / "index.html").exists()
+    assert _run(tmp_path, "2026-10-08") == 0
+    capsys.readouterr()
+    assert _run(tmp_path, "2026-10-08", "--salida", str(site)) == 3  # sin novedad
+    io = capsys.readouterr()
+    assert "Aviso: Sin novedad" in io.out and "No se pudo" not in io.err and not (site / "index.html").exists()
+    # Para reescribir el sitio igual está --solo-publicar, que termina en 0.
+    from community_lens import cli
+    assert cli.periodico(["--grupo", "Semanal", "--solo-publicar", "--salida", str(site)]) == 0
+    assert (site / "index.html").exists()
+
+
+def test_errors_exit_1(no_network, setenv, tmp_path, con, capsys):
+    from community_lens import cli
+    setenv(ANTHROPIC_API_KEY="")
+    assert _run(tmp_path, "2026-10-08") == 1
+    assert capsys.readouterr().err.startswith("No se pudo: No hay ningún modelo configurado")
+    assert cli.periodico(["--archivo", str(tmp_path / "falta.zip"), "--grupo", "Semanal"]) == 1
+    assert "No se pudo: No existe el archivo" in capsys.readouterr().err
+
+
+def test_folder_takes_the_newest_export(no_network, setenv, tmp_path, con, capsys):
+    import os
+
+    from community_lens import cli
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    d = _folder(tmp_path, "2026-10-08", "2026-10-15")
+    for junk in (".DS_Store", "informe.pdf"):  # más nuevos, pero no son exportaciones
+        (d / junk).write_bytes(b"x")
+        os.utime(d / junk, (1_900_000_000,) * 2)
+    (d / "sub").mkdir()
+    before = sorted((p.name, p.stat().st_mtime) for p in d.iterdir())
+    assert cli.periodico(["--carpeta", str(d), "--grupo", "Semanal", "--orden-fecha", "MDY", "--continuar"]) == 0
+    out = capsys.readouterr().out
+    assert "Exportación más nueva de la carpeta: WhatsApp Chat 2026-10-15.txt\n" in out and str(d) not in out
+    assert "(2026-10-08 a 2026-10-14)" in out
+    assert sorted((p.name, p.stat().st_mtime) for p in d.iterdir()) == before  # no borra, mueve ni toca nada
+
+
+def test_folder_twice_with_continue_is_idempotent(no_network, setenv, tmp_path, con, capsys):
+    from community_lens import cli
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    models = no_network[1]
+    args = ["--carpeta", str(_folder(tmp_path, "2026-10-08")), "--grupo", "Semanal", "--orden-fecha", "MDY", "--continuar"]
+    assert cli.periodico(args) == 0
+    calls = len(models.requests)
+    cid = newspaper.find_chat(con, "Semanal")["id"]
+    capsys.readouterr()
+    assert cli.periodico([*args[:2], "--grupo-id", str(cid), *args[4:]]) == 3
+    assert "ya estaba importado" in capsys.readouterr().out and len(models.requests) == calls
+    assert len(newspaper.editions(con, cid)) == 1
+
+
+def test_folder_rules(no_network, setenv, tmp_path, con, capsys):
+    from community_lens import cli
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    empty = tmp_path / "vacia"
+    empty.mkdir()
+    (empty / ".DS_Store").write_bytes(b"x")
+    (empty / "otro.pdf").write_bytes(b"x")
+    for folder, why in ((empty, "no tiene ninguna exportación .zip o .txt"), (tmp_path / "no-existe", "No existe la carpeta")):
+        assert cli.periodico(["--carpeta", str(folder), "--grupo", "Semanal"]) == 1
+        assert why in capsys.readouterr().err
+    d = _folder(tmp_path, "2026-10-08")
+    for args, why in ((["--carpeta", str(d)], "--carpeta exige --grupo-id o --grupo"),
+                      (["--carpeta", str(d), "--archivo", str(d / "x.txt"), "--grupo", "Semanal"], "not allowed with argument")):
+        with pytest.raises(SystemExit) as exit_:
+            cli.periodico(args)
+        assert exit_.value.code == 2 and why in capsys.readouterr().err
+    assert con.execute("SELECT COUNT(*) FROM chats").fetchone()[0] == 0  # no importó nada
+
+
+def test_json_output(no_network, setenv, tmp_path, con, capsys):
+    from community_lens import cli
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    site = tmp_path / "sitio"
+
+    def run(*args: str) -> tuple[int, dict, str]:
+        code = cli.periodico([*args, "--json"])
+        io = capsys.readouterr()
+        return code, json.loads(io.out), io.err
+
+    code, res, err = run("--archivo", str(_folder(tmp_path, "2026-10-02") / "WhatsApp Chat 2026-10-02.txt"), "--grupo", "Semanal",
+                         "--orden-fecha", "MDY", "--continuar", "--salida", str(site))
+    assert (code, res["status"], res["edition"], res["site"]) == (3, "material_insuficiente", None, None) and "hacen falta 3" in res["detail"]
+    assert res["import"] == {"file": "WhatsApp Chat 2026-10-02.txt", "status": "imported", "chat_id": res["import"]["chat_id"], "added": 4, "matched_existing": 0}
+    assert "Importado en el grupo" in err and "Aviso:" in err
+    cid = res["import"]["chat_id"]
+    d = _folder(tmp_path, "2026-10-08", name="otra")
+    code, res, err = run("--carpeta", str(d), "--grupo-id", str(cid), "--orden-fecha", "MDY", "--continuar", "--salida", str(site))
+    assert (code, res["status"], res["detail"]) == (0, "generada", None)
+    assert res["import"]["status"] == "imported" and res["import"]["matched_existing"] == 4 and res["import"]["added"] == 12
+    ed = res["edition"]
+    assert (ed["from"], ed["to"], ed["readings"]) == ("2026-10-01", "2026-10-07", 0) and ed["articles"] > 0
+    assert ed["sent"]["pages_to"] == "Claude" and ed["sent"]["chat_messages"] == 0 and ed["sent"] == newspaper.editions(con, cid)[0]["sent"]
+    assert res["site"] == {"dir": str(site), "files": 2} and isinstance(res["warnings"], list)
+    assert "Exportación más nueva de la carpeta" in err and "Edición" in err and "Sitio escrito" in err
+    # Ninguna clave trae texto del chat: ni enlaces ni nombres.
+    out = json.dumps(res)
+    assert "example.org" not in out and "Ana" not in out and "lean" not in out
+    code, res, _ = run("--carpeta", str(d), "--grupo-id", str(cid), "--orden-fecha", "MDY", "--continuar")
+    assert (code, res["status"], res["edition"]) == (3, "sin_novedad", None) and res["import"]["status"] == "duplicate"
+    assert res["detail"].startswith("Sin novedad")
+    code, res, err = run("--grupo-id", str(cid), "--solo-publicar", "--salida", str(site))
+    assert (code, res["status"], res["import"], res["edition"], res["site"]["files"]) == (0, "publicada", None, None, 2)
+    code, res, err = run("--grupo-id", "999")
+    assert (code, res["status"]) == (1, "error") and "No hay ningún grupo con id 999" in res["detail"] and "No se pudo:" in err
+    # Sin --json, la salida estándar sigue siendo solo para personas.
+    assert cli.periodico(["--grupo-id", str(cid), "--solo-publicar", "--salida", str(site)]) == 0
+    assert "{" not in capsys.readouterr().out
+
+
+def test_site_folder_that_is_a_file_fails_cleanly_and_says_the_edition_was_saved(no_network, setenv, tmp_path, con, capsys):
+    """Un error del sistema de archivos (o de SQLite) no da traceback: código 1, JSON con status "error" y, como la
+    edición ya se guardó, el mensaje dice cómo publicarla."""
+    setenv(ANTHROPIC_API_KEY="k-demo")
+    not_a_dir = tmp_path / "sitio"
+    not_a_dir.write_text("ocupado")
+    assert _run(tmp_path, "2026-10-08", "--salida", str(not_a_dir), "--json") == 1
+    io = capsys.readouterr()
+    out = json.loads(io.out)
+    assert out["status"] == "error" and out["edition"]["id"] and out["site"] is None
+    assert "quedó guardada" in out["detail"] and "--solo-publicar" in out["detail"] and "No se pudo:" in io.err
+    assert len(newspaper.editions(con, newspaper.find_chat(con, "Semanal")["id"])) == 1
+
+
+def test_solo_publicar_needs_salida_and_excludes_continuar(client, capsys):
+    from community_lens import cli
+    for args in (["--grupo", "Demo", "--solo-publicar"], ["--grupo", "Demo", "--solo-publicar", "--salida", "x", "--continuar"]):
+        with pytest.raises(SystemExit) as exit_:
+            cli.periodico(args)
+        assert exit_.value.code == 2 and "necesita --salida y no se combina con --continuar" in capsys.readouterr().err

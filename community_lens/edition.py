@@ -192,6 +192,12 @@ def listing(con, chat_id: int) -> list[dict]:
                                  (chat_id,))]
 
 
+def last_covered_day(con, chat_id: int) -> str | None:
+    """Último día que cubre alguna edición del grupo; None si no tiene. Hasta que exista el estado de borrador y
+    aprobación (#7) cuenta toda edición guardada; cuando exista, tiene que pasar a ser la última aprobada."""
+    return con.execute("SELECT MAX(date_to) d FROM editions WHERE chat_id=?", (chat_id,)).fetchone()["d"]
+
+
 def latest_per_range(con, chat_id: int) -> list[Edition]:
     """La edición más reciente de cada rango, del rango más nuevo al más viejo: lo que se publica."""
     latest: dict[tuple[str, str], str] = {}
