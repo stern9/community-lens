@@ -10,7 +10,7 @@ HTML = {"Content-Type": "text/html; charset=utf-8"}
 class RealDnsNoSend(newspaper.Net):
     """Resolución real (direcciones literales y localhost no salen a la red) y ninguna solicitud permitida."""
 
-    def get(self, parts, ip):
+    def get(self, parts, ip, ua=None):
         pytest.fail(f"no debe emitirse ninguna solicitud ({parts.geturl()})")
 
 
@@ -178,6 +178,19 @@ def test_social_card_for_other_platforms_reads_only_public_metadata():
     assert (wall["status"], wall["reason"]) == ("failed", "la plataforma no entregó contenido público")
 
 
+def test_instagram_and_facebook_are_asked_as_a_tool_not_as_a_browser():
+    """Meta le da a un navegador sin sesión la app vacía; a un cliente que se identifica como herramienta, la ficha og."""
+    net = FakeNet(lambda url: (200, HTML, '<title>Facebook</title><meta property="og:title" content="Página Demo">'
+                                          '<meta property="og:description" content="Mañana abrimos la convocatoria para...">'))
+    page = newspaper.read_page({"url": "https://www.facebook.com/PaginaDemo/posts/1", "kind": "social"}, net)
+    assert net.agents == [newspaper.META_UA] and "Chrome" not in newspaper.META_UA and "facebookexternalhit" not in newspaper.META_UA
+    assert page["text"].splitlines() == ["[plataforma] Facebook", "[texto] Mañana abrimos la convocatoria para...",
+                                         "[titulo] Página Demo", "[nota] La plataforma recorta el texto: es solo el comienzo de la publicación."]
+    other = FakeNet(lambda url: (200, HTML, '<meta property="og:description" content="Un hilo">'))
+    newspaper.read_page({"url": "https://www.threads.net/@demo/post/1", "kind": "social"}, other)
+    assert other.agents == [newspaper.UA]                                      # el resto sigue pidiendo como navegador
+
+
 def test_https_is_verified_against_the_name_while_connecting_to_the_checked_address(monkeypatch):
     """Conectarse a la IP ya verificada no relaja TLS: el certificado y el SNI siguen siendo los del nombre."""
     seen = {}
@@ -205,10 +218,10 @@ def test_next_verified_address_is_tried_when_one_does_not_connect(monkeypatch):
     monkeypatch.setattr(newspaper.socket, "create_connection", no_route)
 
     class DualStack(FakeNet):
-        def get(self, parts, ip):
+        def get(self, parts, ip, ua=newspaper.UA):
             if ":" in ip:
-                return newspaper.Net.get(self, parts, ip)  # el connect real, que falla
-            return super().get(parts, ip)
+                return newspaper.Net.get(self, parts, ip, ua)  # el connect real, que falla
+            return super().get(parts, ip, ua)
     net = DualStack(lambda url: (200, HTML, "<p>hola</p>"), dns={"medio.example": ["2606:4700::1111", "93.184.216.34"]})
     assert newspaper.http_get("https://medio.example/a", net) == ("https://medio.example/a", "<p>hola</p>")
     assert seen == ["2606:4700::1111"] and [ip for _, ip in net.requests] == ["93.184.216.34"]

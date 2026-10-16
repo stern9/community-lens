@@ -31,13 +31,18 @@ SOCIAL = {"x.com": "X", "twitter.com": "X", "youtube.com": "YouTube", "youtu.be"
 # Enlaces que no son contenido: invitaciones, llamadas, formularios, archivos compartidos.
 SKIP = {"chat.whatsapp.com", "wa.me", "api.whatsapp.com", "meet.google.com", "zoom.us", "teams.microsoft.com", "calendly.com",
         "forms.gle", "docs.google.com", "drive.google.com", "maps.app.goo.gl", "goo.gl", "bit.ly", "t.me"}
-LIMITS = {"article": (8, 15), "social": (6, 8), "tool": (4, 6)}  # (por defecto, máximo)
+LIMITS = {"article": (8, 15), "social": (8, 8), "tool": (8, 8)}  # (por defecto, máximo)
 MIN_ARTICLES = 3
 DEFAULT_DAYS = 7
 RESERVE = 4  # artículos extra que se leen por si alguno falla
 PAGE_CHARS = 12000
 PAGE_BYTES = 3_000_000
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
+# Instagram y Facebook le dan a un navegador sin sesión la app vacía (o un error); a un cliente que no se presenta como
+# navegador le dan la ficha de vista previa (og:title, og:description). Nos identificamos tal cual, sin hacernos pasar
+# por el rastreador de nadie.
+META_UA = "Mozilla/5.0 (compatible; CommunityLens/0.1; +herramienta local)"
+META_PLATFORMS = {"Instagram", "Facebook"}
 
 
 class NewspaperError(ValueError):
@@ -273,7 +278,7 @@ class Net:
         except OSError:
             return []
 
-    def get(self, parts: SplitResult, ip: str) -> tuple[int, Message, bytes]:
+    def get(self, parts: SplitResult, ip: str, ua: str = UA) -> tuple[int, Message, bytes]:
         """Un GET que no sigue redirecciones: (estado, encabezados, hasta PAGE_BYTES del cuerpo)."""
         tls = parts.scheme == "https"
         host = parts.hostname or ""
@@ -283,7 +288,7 @@ class Net:
             path = quote(parts.path or "/", safe=safe) + ("?" + quote(parts.query, safe=safe) if parts.query else "")
             conn.request("GET", path, headers={
                 "Host": (f"[{host}]" if ":" in host else host) + (f":{parts.port}" if parts.port else ""),
-                "User-Agent": UA, "Accept-Language": "es,en;q=0.8", "Connection": "close"})
+                "User-Agent": ua, "Accept-Language": "es,en;q=0.8", "Connection": "close"})
             resp = conn.getresponse()
             return resp.status, resp.headers, resp.read(PAGE_BYTES)
         finally:
@@ -308,7 +313,7 @@ def _target(url: str, net: Net) -> tuple[SplitResult, list[str]] | None:
     return (parts, ips) if public else None
 
 
-def http_get(url: str, net: Net | None = None) -> tuple[str, str]:
+def http_get(url: str, net: Net | None = None, ua: str = UA) -> tuple[str, str]:
     """(url final, cuerpo). Lanza NewspaperError con un motivo corto.
     Las redirecciones se siguen acá, una por una: cada salto se verifica ANTES de emitir su solicitud."""
     net = net or NET
@@ -320,7 +325,7 @@ def http_get(url: str, net: Net | None = None) -> tuple[str, str]:
             parts, ips = target
             for n, ip in enumerate(ips):  # p. ej. un nombre con IPv6 e IPv4 en una red sin ruta IPv6
                 try:
-                    status, headers, raw = net.get(parts, ip)
+                    status, headers, raw = net.get(parts, ip, ua)
                     break
                 except _Unreachable:
                     if n == len(ips) - 1:
@@ -338,7 +343,7 @@ def http_get(url: str, net: Net | None = None) -> tuple[str, str]:
         raise NewspaperError("sin respuesta") from None
 
 
-def _social(url: str, get) -> tuple[str, str]:  # get = http_get ya atado a una red
+def _social(url: str, get) -> tuple[str, str]:  # get(url, ua=UA) = http_get ya atado a una red
     """Ficha mínima con lo que la propia plataforma publica para incrustar. Sin sesión no hay más."""
     host = _base(urlsplit(url).hostname or "")
     plat = platform(host)
@@ -367,11 +372,15 @@ def _social(url: str, get) -> tuple[str, str]:  # get = http_get ya atado a una 
         except (NewspaperError, json.JSONDecodeError):
             fields = {"cuenta": account, "nota": "Solo se conoce la cuenta; el texto del video no estuvo disponible."}
     else:
-        page = get(url)[1]
+        page = get(url, META_UA if plat in META_PLATFORMS else UA)[1]
         title, _ = extract(page)
+        if plat in META_PLATFORMS:  # el <title> de Meta es ruido; el og:title trae la cuenta o la página
+            title = _Text_meta(page, "og:title") or title
         generic = {"instagram", "linkedin", "facebook", "sign up | linkedin", ""}
-        fields = {"texto": _Text_meta(page, "og:description") or _Text_meta(page, "description"),
-                  "titulo": "" if title.casefold() in generic else title}
+        text = _Text_meta(page, "og:description") or _Text_meta(page, "description")
+        fields = {"texto": text, "titulo": "" if title.casefold() in generic else title}
+        if text.endswith(("...", "…")):
+            fields["nota"] = "La plataforma recorta el texto: es solo el comienzo de la publicación."
     rows = [(k, v.strip()) for k, v in fields.items() if v and v.strip()]
     if not rows:
         raise NewspaperError("la plataforma no entregó contenido público")
@@ -389,7 +398,7 @@ def _Text_meta(page: str, key: str) -> str:
 
 def read_page(item: dict, net: Net | None = None) -> dict:
     """Descarga y limpia un enlace. No toca la base: se puede correr en paralelo."""
-    get = lambda url: http_get(url, net)
+    get = lambda url, ua=UA: http_get(url, net, ua)
     try:
         if item["kind"] == "social":
             title, text = _social(item["url"], get)
