@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 CSS = Path(__file__).with_name("newspaper.css").read_text(encoding="utf-8")
 ICON = {"X": "𝕏", "YouTube": "▶️", "TikTok": "🎵", "Instagram": "📸", "LinkedIn": "💼", "Facebook": "📘", "Threads": "🧵",
-        "Reddit": "👽", "Bluesky": "🦋"}
+        "Reddit": "👽", "Bluesky": "🦋", "Spotify": "🎧"}
 READINGS_MARKER = b'<section class="fp-views" id="lecturas"'  # solo la plantilla lo produce: el texto entra escapado
 
 
@@ -77,6 +77,33 @@ def _also(socials: list) -> str:
     return '<p class="fp-also"><span>También se compartió:</span>' + "".join(links) + "</p>" if links else ""
 
 
+OTHER_GROUPS = (("article", "Artículos"), ("social", "Redes sociales"), ("tool", "Sitios"))
+
+
+def _others(links: list) -> str:
+    """Los enlaces que pasaron del tope: un índice por tipo, sin resúmenes. Título de la página o, si no se leyó, el
+    dominio; la red con su logo; la fecha en que se compartió y, si la página la declara, la de publicación."""
+    groups = []
+    for kind, label in OTHER_GROUPS:
+        rows = []
+        for x in (x for x in links if x["kind"] == kind):
+            if kind == "social":
+                name = f'<a class="fp-also-a" href="{e(x["url"], quote=True)}" target="_blank" rel="noopener noreferrer">' \
+                       f'{_mark(x["platform"] or "")}<span>{e(x["platform"] or x["domain"])}</span></a>'
+                source = ""
+            else:
+                name = _link(x["url"], x["title"] or x["domain"])
+                source = f' — {e(x["domain"])}' if x["title"] else ""
+            published = f' · publicado {e(short_day(x["published"]))} {e(x["published"][:4])}' if x["published"] else ""
+            rows.append(f'<li>{name}<span class="fp-others-m">{source} · compartido {e(short_day(x["shared"]))}{published}</span></li>')
+        if rows:
+            groups.append(f'<div><h3>{label}</h3><ul>{"".join(rows)}</ul></div>')
+    if not groups:
+        return ""
+    return ('<h2 class="fp-section-h" id="otros">— Otros enlaces compartidos —</h2>'
+            f'<section class="fp-others">{"".join(groups)}</section>')
+
+
 def _card(tag: str, who: str, text: str, shared: str, url: str, cta: str, *, video=False, preview=True, tool=False, anchor="") -> str:
     video_tag = '<span class="fp-tag">video</span>' if video else ""
     body = f"<p>{e(text)}</p>" + ("" if preview else '<span class="fp-nopreview">sin vista previa disponible</span>')
@@ -108,6 +135,8 @@ def render(d: Edition, *, draft: bool = False, public: bool = False) -> str:
         nav.append(f'<a href="#redes">💬 {plural(len(socials), "publicación en redes", "publicaciones en redes")}</a>')
     if tools:
         nav.append(f'<a href="#sitios">🧰 {plural(len(tools), "sitio o herramienta", "sitios y herramientas")}</a>')
+    if d["others"]:
+        nav.append(f'<a href="#otros">🔗 {plural(len(d["others"]), "enlace más", "enlaces más")}</a>')
     thread = f'<p class="fp-thread"><b>Hilo de la edición:</b> {e(d["thread"])}</p>' if d["thread"] else ""
 
     timeline = ""
@@ -181,6 +210,7 @@ def render(d: Edition, *, draft: bool = False, public: bool = False) -> str:
 {views}
 {strip}
 {more}
+{_others(d["others"])}
 {unread}
 <footer class="fp-foot">{foot}</footer>
 </div></div></body>

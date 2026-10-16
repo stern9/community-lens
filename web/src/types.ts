@@ -645,6 +645,8 @@ export interface NewspaperResult {
   socials: number;
   tools: number;
   unread: number;
+  /** Enlaces que pasaron del tope: van sin resumen, en la lista de otros enlaces. */
+  others: number;
   readings: number;
 }
 
