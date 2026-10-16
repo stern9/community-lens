@@ -13,7 +13,7 @@ El diagrama [`diagramas/periodico.html`](diagramas/periodico.html) muestra el re
 | Tipo de enlace (artículo, red social, sitio) | Regla fija por dominio y ruta |
 | Titulares, resúmenes, cronología, "hilo de la edición" | El modelo, leyendo el texto de cada página |
 | Qué artículo encabeza | Código, si uno se compartió más veces que todos los demás (al menos 2); si no, el modelo |
-| "Otros enlaces compartidos": lo que pasa del tope | Código: título de la página, dominio, fechas. Sin modelo |
+| "Otros enlaces compartidos": lo que pasa del tope | Código: titular de la página (limpio), dominio, fechas; de una publicación, lo que publica la plataforma. Sin modelo |
 | Lectura de la conversación (opcional) | El modelo, sobre mensajes seudonimizados |
 | Mensajes por tema dentro de esa lectura | Código, contando la agrupación que hizo el modelo |
 | Qué queda fuera del sitio: lecturas, "En números", nombre del grupo | Código: la versión pública (ver "Versión pública") |
@@ -30,8 +30,9 @@ El diagrama [`diagramas/periodico.html`](diagramas/periodico.html) muestra el re
   post, título del video). A Instagram y Facebook se les pide como herramienta (`META_UA`, sin hacerse pasar por
   ningún rastreador), porque a un navegador sin sesión no le entregan esa ficha; Facebook recorta el texto y la
   edición se lo avisa al modelo. Si la plataforma no entregó nada (cuenta privada, publicación borrada), el enlace no
-  ocupa una tarjeta: va en la línea "También se compartió", con la red y la fecha, sin texto inventado. Cada red lleva
-  su logo, de Simple Icons (`community_lens/brand_icons.py`); LinkedIn no está ahí y usa su ícono de texto.
+  ocupa una tarjeta: va en la línea "También se compartió", con la red y la fecha, sin texto inventado; lo mismo un
+  sitio sin texto legible. Cada red lleva su logo, de Simple Icons (`community_lens/brand_icons.py`); LinkedIn no está
+  ahí y su ícono está dibujado en ese mismo archivo (`DRAWN`).
 - **Plantilla fija** (`community_lens/newspaper_html.py` y `newspaper.css`): un HTML sin scripts ni recursos externos.
 
 ## Reglas de una edición
@@ -54,11 +55,19 @@ Las aplica `community_lens/newspaper.py`, igual para la pantalla y para la líne
   a medias, así que mezclar las dos formas puede dejar la tarde de ese día sin cubrir.
 - **Artículos.** De 3 a 15 con resumen (8 por defecto). Un número fuera de ese rango se rechaza; no se corrige en
   silencio. Se leen hasta 4 artículos de reserva por si alguno falla. Redes sociales: hasta 8 con ficha. Sitios: hasta
-  8. Lo que pasa de esos topes no se pierde: va al final, en "Otros enlaces compartidos", agrupado por tipo, con el
-  título de la página (o el dominio si no se pudo leer), la fecha en que se compartió y la de publicación solo si la
-  página la declara (`article:published_time`; nunca se adivina). Esas páginas se descargan para sacar el título, pero
-  su texto no va al modelo, y de las publicaciones en redes no se descarga nada. La edición avisa cuántos artículos
-  fueron a la lista.
+  8. Lo que pasa de esos topes no se pierde: va al final, en "Otros enlaces compartidos", agrupado por tipo, con los
+  primeros 5 de cada grupo a la vista y el resto en "Ver N más" (`<details>`, sin JavaScript). Cada enlace lleva arriba
+  el medio (o la red y la cuenta) y la fecha en que se compartió, y abajo el titular en dos líneas a lo sumo:
+  - **Artículos y sitios:** el `og:title` de la página o su `<title>` (solo el de la página, no los de sus íconos), sin
+    la cola que repite el medio (" | La Nación"; un guion se recorta solo si lo que sigue es el medio). Si no se pudo
+    leer, el dominio en gris.
+  - **Publicaciones:** lo que la plataforma publica para incrustar (texto del post, título del video) y la cuenta; si
+    no entregó nada, "Publicación en …" en gris.
+  - **Nota vieja:** si la página declara su fecha (`article:published_time`; nunca se adivina) y es de más de 30 días
+    antes de compartirse, una marca "nota de 2022".
+
+  Esas páginas y publicaciones se descargan como las demás (y quedan en `pages`), pero nada de eso va al modelo. La
+  edición avisa cuántos artículos fueron a la lista.
 - **Artículo principal.** Encabeza el que se compartió más veces en el chat, si supera a todos los demás y se compartió
   al menos dos veces; lo cuenta el código. Si no (lo común: casi todo se comparte una vez), lo elige el modelo con un
   criterio fijo: el de más relevancia para la comunidad o el que mejor representa el hilo de la edición.
@@ -127,6 +136,8 @@ que alguien la revisa y la aprueba. Los estados (`editions.status`, definidos en
 - **heredada**: guardada antes de que existiera la aprobación. Se sigue publicando como siempre, dibujándola, sin hash;
   se puede aprobar (pasa a aprobada) o descartar.
 
+![Un borrador: la banda "Borrador, no compartir" arriba, el nombre y el subtítulo públicos, la barra de secciones y el artículo principal](imagenes/periodico-borrador.png)
+
 `publish()` (`--salida`, `--solo-publicar`) escribe, de cada rango, la aprobada o heredada más reciente. De una
 aprobada escribe los bytes guardados **tal cual**, después de comprobar que siguen coincidiendo con su hash; nunca la
 vuelve a dibujar. Después borra de `ediciones/` las páginas de rango (`AAAA-MM-DD_a_AAAA-MM-DD.html`) que no escribió
@@ -176,8 +187,10 @@ modelo redactó sin ver ningún mensaje. Es la misma plantilla (`newspaper_html.
 | Nombre público del periódico (`CL_PERIODICO_NOMBRE`, en `<title>`, título e `index.html`) | Configuración | Queda, si está configurado: "FAIR.CR - Lo que se compartió" | Lo elige quien publica; no es el nombre del grupo de WhatsApp. Cambiarlo no toca lo ya aprobado: hay que reaprobar |
 | Subtítulo público (`CL_PERIODICO_SUBTITULO`, bajo el título de cada edición y de `index.html`) | Configuración | Queda, si está configurado: "Comunidad General". Sin él, la versión completa muestra ahí el nombre del grupo y la pública nada | Igual que el nombre público |
 | Enlaces: la URL tal como se compartió, sin `utm_*` | El chat | Queda | Es el contenido del periódico. Otros parámetros de seguimiento (`si=`, `igsh=`, `fbclid`…) no se quitan |
-| Titulares, resúmenes, hilo, cronología, fichas de redes y sitios, "No se pudo leer" | El modelo sobre las páginas, o cadenas fijas del código | Queda | No sale de ningún mensaje |
-| "Otros enlaces compartidos" | Los enlaces del chat, con el título y la fecha de publicación de su página | Queda | Son enlaces y fechas, igual que el resto; no lleva cuántas veces se compartió cada uno |
+| Titulares, resúmenes, hilo, cronología, fichas de redes y sitios | El modelo sobre las páginas, o cadenas fijas del código | Queda | No sale de ningún mensaje |
+| "No se pudo leer" (con el motivo: "HTTP 404"…) | Código | Fuera: esos enlaces van a "Otros enlaces compartidos" con su dominio | El motivo es jerga para quien lee; sirve a quien revisa |
+| Cabecera "Datos del …" | Plantilla | Pasa a "Enlaces del …" | La versión pública no lleva datos del chat |
+| "Otros enlaces compartidos" | Los enlaces del chat, con el titular y la fecha de publicación de su página o lo que publica la plataforma | Queda | Son enlaces y fechas, igual que el resto; no lleva cuántas veces se compartió cada uno. El conteo de cada grupo es de enlaces, no del chat |
 
 Sin cronología, la versión pública no tiene columna lateral y la rejilla pasa a una columna. La barra de secciones
 nunca tuvo entrada de lecturas (solo artículos, redes y sitios), así que ahí no hay nada que quitar.

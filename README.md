@@ -151,8 +151,8 @@ El formato de periódico y la idea de que un modelo lea las páginas y arme la p
 [ai-newtab](https://github.com/ThariqS/ai-newtab) de Thariq (`ThariqS`, licencia MIT); aquí no se usa su código.
 Los gráficos usan [Observable Plot](https://observablehq.com/plot/) y D3 (licencia ISC), copiados en `web/vendor/`.
 Los diagramas están hechos con [Archify](https://github.com/tt-a1i/archify) (licencia MIT).
-Los logos de las redes sociales del periódico son de [Simple Icons](https://simpleicons.org) (CC0); las marcas son de sus
-dueños.
+Los logos de las redes sociales del periódico son de [Simple Icons](https://simpleicons.org) (CC0), salvo el de LinkedIn,
+dibujado aquí; las marcas son de sus dueños.
 
 Community Lens se publica bajo la [licencia MIT](LICENSE). Las librerías copiadas en `web/vendor/` conservan la suya
 (ver [web/vendor/README.md](web/vendor/README.md)).
