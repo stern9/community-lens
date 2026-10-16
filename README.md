@@ -100,7 +100,7 @@ Esto es todo lo que sale de tu máquina, y cuándo:
 | Clasificar con Jev (apagado por defecto; pide confirmación en cada ejecución) | El texto de cada mensaje a clasificar y el de hasta `JEV_CONTEXT_MESSAGES` mensajes previos (2 por defecto) | `api.typesafe.ai` |
 | Generar una edición del periódico | Una solicitud a cada página enlazada, desde tu máquina; el texto público de esas páginas | Los sitios enlazados; el modelo que redacta |
 | Pedir además una "lectura de la conversación" (casilla de confirmación aparte) | Los mensajes del rango con seudónimos (P01, P02…), sin teléfonos, correos ni menciones. Un nombre escrito dentro de un mensaje sí puede ir | Cada modelo marcado |
-| Publicar el sitio (`--salida`) | La versión pública de cada edición aprobada: sin lecturas de la conversación, sin el nombre del grupo y sin cifras del chat; sí los enlaces y las fechas en que se compartieron | El hosting que elijas |
+| Publicar el sitio (`--salida`) | La versión pública de cada edición aprobada: sin lecturas de la conversación, sin el nombre del grupo y sin cifras del chat; sí los enlaces (sin parámetros de seguimiento) y las fechas en que se compartieron | El hosting que elijas |
 
 Las keys se leen de `.env`, no se registran y nunca llegan al navegador. **Eliminar grupo y datos** (en *Importar
 chat*) borra todo lo derivado de ese grupo, incluidas sus ediciones y el texto de las páginas que se leyeron para

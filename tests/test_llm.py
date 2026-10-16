@@ -139,3 +139,8 @@ def test_provider_list_and_public_shape_never_carry_the_key(setenv):
         llm.get("openai")
     setenv(OPENAI_MODEL="gpt-demo")
     assert llm.get("openai").base_url == "https://api.openai.example/v1" and llm.missing_model() == []
+
+
+def test_the_key_never_shows_in_a_provider_repr():
+    for p in PROVIDERS.values():
+        assert KEY not in repr(p) and KEY not in str(p) and KEY not in json.dumps(p.public())

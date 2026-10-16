@@ -209,6 +209,25 @@ la sección de lecturas), el mismo texto que trae `blocked_reason` en la fila, y
 ese motivo en `site.skipped`. Las heredadas no hacen falta: se
 dibujan en su versión pública al publicar.
 
+#### Publicar en GitHub Pages
+
+El sitio es HTML estático, así que cualquier hosting sirve. Con GitHub Pages en un repositorio público, la forma que no
+mezcla el sitio con el código es una rama `gh-pages` sin historia común con `main`, en su propia carpeta:
+
+```bash
+git worktree add --orphan -b gh-pages ../sitio-gh-pages   # una sola vez
+touch ../sitio-gh-pages/.nojekyll                          # que GitHub sirva los archivos tal cual
+
+# cada edición: aprobar escribiendo el sitio en esa carpeta, y subirlo
+.venv/bin/python -m community_lens periodico --grupo-id 1 --edicion N --aprobar --aprobado-por "…" --canal "…" --salida ../sitio-gh-pages
+git -C ../sitio-gh-pages add -A && git -C ../sitio-gh-pages commit -m "publicar: edición del …" && git -C ../sitio-gh-pages push -u origin gh-pages
+```
+
+Pages se activa en *Settings → Pages* con la rama `gh-pages` y la carpeta raíz (al subir esa rama por primera vez,
+GitHub suele activarlo solo). `publish()` solo reescribe `index.html` y `ediciones/`: el `.git` y el `.nojekyll` de la
+carpeta quedan. Cada publicación es un commit, así que queda el historial de qué se publicó y cuándo. Para un
+dominio propio, un archivo `CNAME` en esa rama y el registro CNAME en el DNS del dominio.
+
 ### Programarlo
 
 Dejá cada exportación en una carpeta (AirDrop, iCloud, correo) y corré, cada cierto tiempo:
