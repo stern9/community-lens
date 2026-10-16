@@ -21,8 +21,13 @@ El diagrama [`diagramas/periodico.html`](diagramas/periodico.html) muestra el re
 - **El modelo nunca escribe direcciones.** Se refiere a cada enlace por un número y el código pone la URL. Un
   número que no existe se descarta, así que una edición solo enlaza a lo que se compartió en el chat.
 - **Identidad de un enlace.** El mismo enlace compartido con y sin `www.` o `m.`, con o sin barra final, o con
-  parámetros `utm_…` es un solo enlace con varias compartidas, tanto en Recursos como en el periódico. Primero se
-  agrupa y se cuenta; después se decide el tipo. La dirección que se muestra es la del chat, sin los `utm_…`.
+  parámetros de seguimiento es un solo enlace con varias compartidas, tanto en Recursos como en el periódico. Primero
+  se agrupa y se cuenta; después se decide el tipo. La dirección que se muestra es la del chat, sin esos parámetros:
+  `utm_…`, `fbclid`, `gclid` e `igsh` en cualquier sitio, y los propios de cada red (`si` de YouTube y Spotify, `s` y
+  `t` de X, `rcm` de LinkedIn, `u_code` de TikTok, `xmt` de Threads…), varios de los cuales identifican a quien
+  compartió. Un nombre como `si` o `t` solo se quita en la red donde es seguimiento: en otro sitio puede ser parte de la
+  dirección. La lista está en `resources._TRACKING_BY_SITE`. La plantilla los quita también al dibujar, así una edición
+  guardada antes de este cambio tampoco los muestra (una aprobada hay que reaprobarla: se publican sus bytes).
 - **Lectura de páginas.** Se descargan desde tu máquina y su texto limpio se guarda en la tabla `pages`, bajo la
   identidad del enlace, para no volver a descargarlas. Si un artículo no se puede leer (muro de pago, enlace caído)
   entra el siguiente del rango y el que falló queda listado en "No se pudo leer".
@@ -186,7 +191,7 @@ modelo redactó sin ver ningún mensaje. Es la misma plantilla (`newspaper_html.
 | Quién redactó | Configuración | Queda | No es dato del grupo |
 | Nombre público del periódico (`CL_PERIODICO_NOMBRE`, en `<title>`, título e `index.html`) | Configuración | Queda, si está configurado: "FAIR.CR - Lo que se compartió" | Lo elige quien publica; no es el nombre del grupo de WhatsApp. Cambiarlo no toca lo ya aprobado: hay que reaprobar |
 | Subtítulo público (`CL_PERIODICO_SUBTITULO`, bajo el título de cada edición y de `index.html`) | Configuración | Queda, si está configurado: "Comunidad General". Sin él, la versión completa muestra ahí el nombre del grupo y la pública nada | Igual que el nombre público |
-| Enlaces: la URL tal como se compartió, sin `utm_*` | El chat | Queda | Es el contenido del periódico. Otros parámetros de seguimiento (`si=`, `igsh=`, `fbclid`…) no se quitan |
+| Enlaces: la URL tal como se compartió, sin parámetros de seguimiento (`utm_*`, `si=`, `igsh=`, `fbclid`…) | El chat | Queda | Es el contenido del periódico. Los parámetros de seguimiento salen porque varios identifican a quien compartió |
 | Titulares, resúmenes, hilo, cronología, fichas de redes y sitios | El modelo sobre las páginas, o cadenas fijas del código | Queda | No sale de ningún mensaje |
 | "No se pudo leer" (con el motivo: "HTTP 404"…) | Código | Fuera: esos enlaces van a "Otros enlaces compartidos" con su dominio | El motivo es jerga para quien lee; sirve a quien revisa |
 | Cabecera "Datos del …" | Plantilla | Pasa a "Enlaces del …" | La versión pública no lleva datos del chat |

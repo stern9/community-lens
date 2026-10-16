@@ -18,27 +18,55 @@ _SEP = re.compile(r"[-_\s]+")
 # ---------------------------------------------------------------- enlaces --
 # Qué es "el mismo enlace" se define acá y en ningún otro lado. Recursos, el periódico y las páginas
 # guardadas (tabla pages) agrupan por link_key() y muestran clean_url().
-_TRACKING = "utm_"                       # parámetros de seguimiento: no cambian la página
+# Parámetros de seguimiento: no cambian la página y varios identifican a quien compartió el enlace (igsh, si, rcm, xmt,
+# u_code…), así que no se muestran ni se publican. Los nombres van en minúsculas; se comparan sin distinguirlas.
+_TRACKING_PREFIX = "utm_"
+_TRACKING = {"fbclid", "gclid", "dclid", "gbraid", "wbraid", "msclkid", "yclid", "twclid", "mc_cid", "mc_eid", "_hsenc", "_hsmi",
+             "mkt_tok", "igsh", "igshid"}
+# Los que solo son de seguimiento en ciertos sitios: en otro sitio, "si" o "t" pueden ser parte de la dirección.
+_TRACKING_BY_SITE = {
+    ("youtube.com", "youtu.be", "spotify.com", "spotify.link"): {"si", "feature", "pp"},
+    ("x.com", "twitter.com"): {"s", "t", "ref_src", "ref_url"},
+    ("facebook.com", "fb.watch"): {"mibextid", "rdid", "__cft__[0]", "__cft__%5b0%5d", "__tn__", "sfnsn"},
+    ("tiktok.com",): {"_r", "_t", "is_from_webapp", "sender_device", "web_id", "share_app_id", "share_item_id", "share_link_id",
+                      "tt_from", "u_code", "user_id", "checksum", "sec_user_id", "social_share_type", "timestamp"},
+    ("linkedin.com", "lnkd.in"): {"rcm", "trk", "trackingid", "lipi", "midtoken", "midsig", "trkemail", "originalsubdomain"},
+    ("threads.net", "threads.com"): {"xmt", "slof"},
+}
 _HOST_PREFIXES = ("www.", "m.", "mobile.")
 
 
-def _without_tracking(query: str) -> str:
-    return "&".join(part for part in query.split("&") if part and not part.lower().startswith(_TRACKING))
+def _is_tracking(name: str, host: str) -> bool:
+    name = name.lower()
+    if name.startswith(_TRACKING_PREFIX) or name in _TRACKING:
+        return True
+    host = host.lower()
+    return any(name in names for sites, names in _TRACKING_BY_SITE.items() if any(host == s or host.endswith("." + s) for s in sites))
+
+
+def _without_tracking(query: str, host: str) -> str:
+    return "&".join(part for part in query.split("&") if part and not _is_tracking(part.partition("=")[0], host))
 
 
 def clean_url(url: str) -> str:
-    """La URL tal como se compartió, sin parámetros utm_* (en cualquier posición). Es la que se muestra y se abre."""
+    """La URL tal como se compartió, sin parámetros de seguimiento (en cualquier posición). Es la que se muestra, se abre y
+    se publica."""
     head, sep, fragment = url.partition("#")
     base, mark, query = head.partition("?")
     if not mark:
         return url
-    query = _without_tracking(query)
+    try:
+        host = urlsplit(base if "://" in base else "//" + base).hostname or ""
+    except ValueError:
+        host = ""
+    query = _without_tracking(query, host)
     return base + ("?" + query if query else "") + sep + fragment
 
 
 def link_key(url: str) -> str:
     """Identidad de un enlace: dos URLs con la misma clave son el mismo enlace.
-    No distingue mayúsculas en el dominio, prefijos www./m./mobile., puerto por defecto, barra final ni parámetros utm_*.
+    No distingue mayúsculas en el dominio, prefijos www./m./mobile., puerto por defecto, barra final ni parámetros de
+    seguimiento.
     Es una clave para agrupar, no una dirección: no se abre ni se muestra."""
     try:
         parts = urlsplit(url if "://" in url else "//" + url)
@@ -50,7 +78,7 @@ def link_key(url: str) -> str:
             host = host[len(prefix):]
     if (parts.scheme.lower(), port) in (("https", 443), ("http", 80)):
         port = None
-    query = _without_tracking(parts.query)
+    query = _without_tracking(parts.query, host)
     return ((parts.scheme.lower() + "://" if parts.scheme else "") + host + (f":{port}" if port else "") + parts.path.rstrip("/")
             + ("?" + query if query else "") + ("#" + parts.fragment if parts.fragment else ""))
 

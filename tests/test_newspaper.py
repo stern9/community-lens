@@ -1587,3 +1587,14 @@ def test_a_site_without_preview_goes_to_the_footer_line_not_to_a_card():
     page = newspaper_html.render(ed, public=True).split("</style>")[1]
     assert "fp-card-tool" not in page and "El sitio no entregó" not in page and 'href="#sitios"' not in page
     assert "vacio.example · 3 oct" in page.split('<p class="fp-also">')[1]
+
+
+def test_editions_saved_with_tracking_parameters_are_shown_without_them():
+    from community_lens import edition, newspaper_html
+    ed = edition.upgrade(json.loads((__import__("conftest").FIX / "edition_v1.json").read_text(encoding="utf-8"))["data"])
+    ed["socials"][0]["url"] = "https://youtu.be/abc123?si=QuienComparte"
+    ed["others"] = [{"kind": "social", "url": "https://www.instagram.com/p/z/?igsh=QuienComparte", "shared": "2026-10-02",
+                     "domain": "instagram.com", "platform": "Instagram", "title": None, "published": None, "caption": None, "account": None}]
+    for public in (False, True):
+        page = newspaper_html.render(ed, public=public)
+        assert "QuienComparte" not in page and 'href="https://youtu.be/abc123"' in page and 'href="https://www.instagram.com/p/z/"' in page
