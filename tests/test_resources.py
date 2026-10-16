@@ -82,6 +82,24 @@ def test_link_identity():
     assert clean("https://example.org/a?id=3") == "https://example.org/a?id=3" and clean("https://example.org/utm_x") == "https://example.org/utm_x"
 
 
+@pytest.mark.parametrize(("shared", "shown"), [
+    ("https://youtu.be/abc?si=Xy12", "https://youtu.be/abc"),
+    ("https://www.youtube.com/watch?v=abc&si=Xy12&t=42", "https://www.youtube.com/watch?v=abc&t=42"),   # t es el minuto: queda
+    ("https://open.spotify.com/episode/e1?si=a1b2", "https://open.spotify.com/episode/e1"),
+    ("https://www.instagram.com/reel/r1/?igsh=MTZ3&utm_source=ig_web_copy_link", "https://www.instagram.com/reel/r1/"),
+    ("https://x.com/demo/status/1?s=20&t=AbC", "https://x.com/demo/status/1"),
+    ("https://www.facebook.com/share/p/p1/?mibextid=oFDknk&rdid=r9", "https://www.facebook.com/share/p/p1/"),
+    ("https://www.tiktok.com/@demo/video/9?_r=1&_t=ZM-8&u_code=abc&lang=es", "https://www.tiktok.com/@demo/video/9?lang=es"),
+    ("https://www.linkedin.com/posts/demo_activity-1?rcm=ACoAA&utm_medium=member_ios", "https://www.linkedin.com/posts/demo_activity-1"),
+    ("https://www.threads.net/@demo/post/p1?xmt=AQG", "https://www.threads.net/@demo/post/p1"),
+    ("https://medio.example/nota?fbclid=IwAR0&id=7&GCLID=z", "https://medio.example/nota?id=7"),
+    ("https://medio.example/buscar?si=1&t=2&s=3", "https://medio.example/buscar?si=1&t=2&s=3"),           # en otro sitio son parte de la dirección
+])
+def test_tracking_parameters_that_identify_who_shared_are_removed(shared, shown):
+    assert resources.clean_url(shared) == shown
+    assert resources.link_key(shared) == resources.link_key(shown)
+
+
 def test_links_are_grouped_by_identity_before_counting(con):
     lines = ["[6/1/26, 10:00:00] Dana Demo: https://www.example.org/nota/?utm_source=boletin",
              "[6/2/26, 10:00:00] Jota Demo: https://example.org/nota",

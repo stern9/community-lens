@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from .brand_icons import DRAWN, LOGOS
 from .config import settings
 from .dates import fmt_day, short_day
+from .resources import clean_url
 
 if TYPE_CHECKING:
     from .edition import Article, Edition, Reading
@@ -154,11 +155,20 @@ def _reading(r: Reading) -> str:
               "mensajes de este período.</p></section>")
 
 
+def _without_tracking(d: Edition) -> Edition:
+    """Las direcciones sin parámetros de seguimiento (resources.clean_url). Las ediciones nuevas ya las guardan así; las
+    generadas antes de que se quitaran todos (solo se quitaban los utm_) los llevan, y no deben publicarse."""
+    c = lambda x: {**x, "url": clean_url(x["url"])}
+    return {**d, "lead": c(d["lead"]), "articles": [c(a) for a in d["articles"]], "socials": [c(x) for x in d["socials"]],  # type: ignore[return-value]
+            "tools": [c(x) for x in d["tools"]], "unread": [c(x) for x in d["unread"]], "others": [c(x) for x in d["others"]]}
+
+
 def render(d: Edition, *, draft: bool = False, public: bool = False) -> str:
     """La página de una edición. Con draft, la banda "Borrador, no compartir" arriba y "BORRADOR · " en el título.
     Con public, la versión que se publica (la que se guarda al aprobar): sin lo que describe la conversación, es
     decir sin lecturas, sin la caja "En números" y sin el nombre del grupo; lo que viene de las páginas enlazadas
     queda. Sin public, la versión completa que se ve en la app. Se combinan libremente."""
+    d = _without_tracking(d)
     lead, arts, socials, tools, readings, f = d["lead"], d["articles"], d["socials"], d["tools"], d["readings"], d["facts"]
     plural = lambda n, one, many: f"{n} {one if n == 1 else many}"
     nav = [f'<a href="#articulos">📰 {plural(1 + len(arts), "artículo", "artículos")}</a>']
