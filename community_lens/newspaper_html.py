@@ -11,6 +11,8 @@ from html import escape as e
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .brand_icons import LOGOS
+from .config import settings
 from .dates import fmt_day, short_day
 
 if TYPE_CHECKING:
@@ -20,6 +22,20 @@ CSS = Path(__file__).with_name("newspaper.css").read_text(encoding="utf-8")
 ICON = {"X": "𝕏", "YouTube": "▶️", "TikTok": "🎵", "Instagram": "📸", "LinkedIn": "💼", "Facebook": "📘", "Threads": "🧵",
         "Reddit": "👽", "Bluesky": "🦋"}
 READINGS_MARKER = b'<section class="fp-views" id="lecturas"'  # solo la plantilla lo produce: el texto entra escapado
+
+
+def _title() -> str:
+    """El título del periódico: "Lo que se compartió", precedido del nombre público si está configurado
+    (CL_PERIODICO_NOMBRE). Ya escapado. Es lo único de la plantilla que sale de la configuración."""
+    name = settings().newspaper_name
+    return f"{e(name)} - Lo que se compartió" if name else "Lo que se compartió"
+
+
+def _sub(fallback: str = "") -> str:
+    """La línea bajo el título: el subtítulo público si está configurado (CL_PERIODICO_SUBTITULO), si no `fallback`
+    (el nombre del grupo, solo en la versión completa). Ya con su etiqueta."""
+    text = settings().newspaper_subtitle or fallback
+    return f'\n<p class="fp-sub">{e(text)}</p>' if text else ""
 
 
 def _link(url: str, text: str, cls: str = "fp-a") -> str:
@@ -44,11 +60,29 @@ def _article(a: Article) -> str:
             + _link(a["url"], "Leer el artículo original →", "fp-more") + "</article>")
 
 
+def _mark(plat: str) -> str:
+    """El logo de la red, chico, junto a su nombre: un SVG fijo de brand_icons.py, sin estilos en línea. Sin logo (LinkedIn
+    o una plataforma nueva), su ícono de texto."""
+    if plat in LOGOS:
+        color, path = LOGOS[plat]
+        return f'<svg class="fp-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="#{color}" d="{path}"/></svg>'
+    return f'<span aria-hidden="true">{ICON.get(plat, "🔗")}</span>'
+
+
+def _also(socials: list) -> str:
+    """Las publicaciones de las que la plataforma no entregó nada: una línea al pie, con red, fecha y enlace. Una tarjeta
+    vacía pesa lo mismo que una con contenido y se lee como rota."""
+    links = [f'<a class="fp-also-a" href="{e(s["url"], quote=True)}" target="_blank" rel="noopener noreferrer">'
+             f'{_mark(s["platform"])}<span>{e(s["platform"])} · {e(short_day(s["shared"]))}</span></a>' for s in socials]
+    return '<p class="fp-also"><span>También se compartió:</span>' + "".join(links) + "</p>" if links else ""
+
+
 def _card(tag: str, who: str, text: str, shared: str, url: str, cta: str, *, video=False, preview=True, tool=False, anchor="") -> str:
     video_tag = '<span class="fp-tag">video</span>' if video else ""
-    nop = "" if preview else '<span class="fp-nopreview">sin vista previa disponible</span>'
+    body = f"<p>{e(text)}</p>" + ("" if preview else '<span class="fp-nopreview">sin vista previa disponible</span>')
+    who_line = f'<div class="fp-card-who">{e(who)}</div>' if who else ""
     return (f'<div class="fp-card{" fp-card-tool" if tool else ""}"{anchor}><div class="fp-item-h">{tag}{video_tag}</div>'
-            f'<div class="fp-card-who">{e(who)}</div><p>{e(text)}</p>{nop}'
+            f'{who_line}{body}'
             f'<div class="fp-card-foot">{_shared(shared)}{_link(url, cta, "fp-more")}</div></div>')
 
 
@@ -103,13 +137,13 @@ def render(d: Edition, *, draft: bool = False, public: bool = False) -> str:
 
     strip = ""
     if socials or tools:
-        cards = [_card(f'<span aria-hidden="true">{ICON.get(s["platform"], "🔗")}</span><span>{e(s["platform"])}</span>',
-                       s["account"] or "Cuenta no disponible", s["text"], s["shared"], s["url"], f'Ver en {s["platform"]} →',
-                       video=s["video"], preview=s["preview"]) for s in socials]
+        cards = [_card(f'{_mark(s["platform"])}<span>{e(s["platform"])}</span>', s["account"] or "", s["text"], s["shared"], s["url"],
+                       f'Ver en {s["platform"]} →', video=s["video"]) for s in socials if s["preview"]]
         cards += [_card('<span aria-hidden="true">🧰</span><span>Sitio</span>', t["name"], t["text"], t["shared"], t["url"], "Ir al sitio →",
                         preview=t["preview"], tool=True, anchor=' id="sitios"' if i == 0 else "") for i, t in enumerate(tools)]
         strip = ('<section class="fp-strip" id="redes"><div class="fp-strip-h"><h2>Redes sociales y herramientas</h2>'
-                 '<span class="fp-swipe">deslizá →</span></div><div class="fp-row">' + "".join(cards) + "</div></section>")
+                 '<span class="fp-swipe">deslizá →</span></div>' + (f'<div class="fp-row">{"".join(cards)}</div>' if cards else "")
+                 + _also([s for s in socials if not s["preview"]]) + "</section>")
 
     more = ('<h2 class="fp-section-h">— Más artículos compartidos —</h2><section class="fp-cols">'
             + "".join(_article(a) for a in arts) + "</section>") if arts else ""
@@ -125,21 +159,21 @@ def render(d: Edition, *, draft: bool = False, public: bool = False) -> str:
                "Los enlaces y las cifras salen del chat exportado. ") +
             "Hecho con Community Lens.")
     group = "" if public else f" · {e(d['chat_name'])}"
-    sub = "" if public else f'\n<p class="fp-sub">{e(d["chat_name"])}</p>'
+    sub = _sub("" if public else d["chat_name"])
 
     return f"""<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{"BORRADOR · " if draft else ""}Lo que se compartió{group} · {e(d['range_label'])}</title>
+<title>{"BORRADOR · " if draft else ""}{_title()}{group} · {e(d['range_label'])}</title>
 <style>html,body{{margin:0}}
 {CSS}</style>
 </head>
 <body><div class="fp-root"><div class="fp-wrap">{band}
 <header>
 <div class="fp-top"><span>{e(d['created_label'])}</span><span>Datos del {e(d['range_label'])}</span></div>
-<h1 class="fp-title">Lo que se compartió</h1>{sub}
+<h1 class="fp-title">{_title()}</h1>{sub}
 <nav class="fp-band" aria-label="Secciones">{''.join(nav)}</nav>
 {thread}
 </header>
@@ -168,13 +202,13 @@ def render_index(entries: list[dict]) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lo que se compartió</title>
+<title>{_title()}</title>
 <style>html,body{{margin:0}}
 {CSS}</style>
 </head>
 <body><div class="fp-root"><div class="fp-wrap">
 <header>
-<h1 class="fp-title">Lo que se compartió</h1>
+<h1 class="fp-title">{_title()}</h1>{_sub()}
 <nav class="fp-band"><span>Todas las ediciones</span></nav>
 </header>
 <section class="fp-cols fp-index">{body}</section>

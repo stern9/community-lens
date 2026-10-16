@@ -24,8 +24,12 @@ El diagrama [`diagramas/periodico.html`](diagramas/periodico.html) muestra el re
 - **Lectura de páginas.** Se descargan desde tu máquina y su texto limpio se guarda en la tabla `pages`, bajo la
   identidad del enlace, para no volver a descargarlas. Si un artículo no se puede leer (muro de pago, enlace caído)
   entra el siguiente del rango y el que falló queda listado en "No se pudo leer".
-- **Redes sociales.** Solo se obtiene lo que cada plataforma publica para incrustar (texto del post, título del
-  video). Lo que no se pudo ver se muestra como "sin vista previa disponible", sin texto inventado.
+- **Redes sociales.** Solo se obtiene lo que cada plataforma publica para incrustar o para vistas previas (texto del
+  post, título del video). A Instagram y Facebook se les pide como herramienta (`META_UA`, sin hacerse pasar por
+  ningún rastreador), porque a un navegador sin sesión no le entregan esa ficha; Facebook recorta el texto y la
+  edición se lo avisa al modelo. Si la plataforma no entregó nada (cuenta privada, publicación borrada), el enlace no
+  ocupa una tarjeta: va en la línea "También se compartió", con la red y la fecha, sin texto inventado. Cada red lleva
+  su logo, de Simple Icons (`community_lens/brand_icons.py`); LinkedIn no está ahí y usa su ícono de texto.
 - **Plantilla fija** (`community_lens/newspaper_html.py` y `newspaper.css`): un HTML sin scripts ni recursos externos.
 
 ## Reglas de una edición
@@ -47,7 +51,7 @@ Las aplica `community_lens/newspaper.py`, igual para la pantalla y para la líne
   novedad"). Una edición aprobada que se hizo desde la pantalla termina en el último día con mensajes, que suele estar
   a medias, así que mezclar las dos formas puede dejar la tarde de ese día sin cubrir.
 - **Artículos.** De 3 a 15 (8 por defecto). Un número fuera de ese rango se rechaza; no se corrige en silencio.
-  Se leen hasta 4 artículos de reserva por si alguno falla. Redes sociales: hasta 6. Sitios: hasta 4. Si el rango
+  Se leen hasta 4 artículos de reserva por si alguno falla. Redes sociales: hasta 8. Sitios: hasta 8. Si el rango
   trae más artículos que el máximo, la edición avisa cuántos quedaron fuera.
 - **Modelos.** "Automático" redacta con el primer proveedor configurado que responda (Claude, OpenAI, Gemini, en ese
   orden) y la edición guarda cuál redactó y cuál falló. Un proveedor elegido por nombre no cae a otro.
@@ -160,6 +164,8 @@ modelo redactó sin ver ningún mensaje. Es la misma plantilla (`newspaper_html.
 | "Compartido 2 oct", rango de la edición, fecha de creación | Fechas del chat y de la edición | Queda | Es la razón de ser del periódico; no nombra a nadie |
 | Cuenta de una publicación en redes | La plataforma, al leer la ficha pública del post | Queda | Viene de la página, no del chat |
 | Quién redactó | Configuración | Queda | No es dato del grupo |
+| Nombre público del periódico (`CL_PERIODICO_NOMBRE`, en `<title>`, título e `index.html`) | Configuración | Queda, si está configurado: "FAIR.CR - Lo que se compartió" | Lo elige quien publica; no es el nombre del grupo de WhatsApp. Cambiarlo no toca lo ya aprobado: hay que reaprobar |
+| Subtítulo público (`CL_PERIODICO_SUBTITULO`, bajo el título de cada edición y de `index.html`) | Configuración | Queda, si está configurado: "Comunidad General". Sin él, la versión completa muestra ahí el nombre del grupo y la pública nada | Igual que el nombre público |
 | Enlaces: la URL tal como se compartió, sin `utm_*` | El chat | Queda | Es el contenido del periódico. Otros parámetros de seguimiento (`si=`, `igsh=`, `fbclid`…) no se quitan |
 | Titulares, resúmenes, hilo, cronología, fichas de redes y sitios, "No se pudo leer" | El modelo sobre las páginas, o cadenas fijas del código | Queda | No sale de ningún mensaje |
 

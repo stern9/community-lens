@@ -71,10 +71,11 @@ def do_import(con, name, chat_id=None, date_order=None, tz="America/Costa_Rica",
 
 class FakeNet:
     """Red falsa para newspaper.http_get: reemplaza solo la resolución de nombres y el GET.
-    `routes(url)` devuelve (estado, encabezados, cuerpo); `requests` anota cada solicitud que se llegó a emitir."""
+    `routes(url)` devuelve (estado, encabezados, cuerpo); `requests` anota cada solicitud que se llegó a emitir y `agents`,
+    el User-Agent con que se pidió."""
 
     def __init__(self, routes, dns=None):
-        self.routes, self.dns, self.requests = routes, {"localhost": ["127.0.0.1"], **(dns or {})}, []
+        self.routes, self.dns, self.requests, self.agents = routes, {"localhost": ["127.0.0.1"], **(dns or {})}, [], []
 
     def resolve(self, host, port):
         if host in self.dns:
@@ -84,8 +85,9 @@ class FakeNet:
         except ValueError:
             return ["93.184.216.34"]  # cualquier otro nombre: una dirección pública de mentira
 
-    def get(self, parts, ip):
+    def get(self, parts, ip, ua=None):
         self.requests.append((parts.geturl(), ip))
+        self.agents.append(ua)
         status, headers, body = self.routes(parts.geturl())
         msg = Message()
         for k, v in headers.items():

@@ -424,7 +424,7 @@ def test_edition_saved_with_the_previous_format_still_opens_and_publishes(client
         "https://tool.example.com/", "https://caido.example.org/nota/rota"}
     old_page = c.get(f"/periodico/{b}")
     assert old_page.status_code == 200 and "1 al 7 de septiembre" in old_page.text and "Hilo de la edición" not in old_page.text
-    assert "La visión de" not in old_page.text and "Cuenta no disponible" in old_page.text and "sin vista previa" not in old_page.text
+    assert "La visión de" not in old_page.text and "Cuenta no disponible" not in old_page.text and "sin vista previa" not in old_page.text
 
     listed = c.get("/api/newspaper/editions", params={"chat_id": cid}).json()
     check("NewspaperEdition", listed, array=True)
@@ -1416,3 +1416,56 @@ def test_listing_says_why_an_approved_edition_waits_for_reapproval(sentinel, cap
     assert cli.periodico(["--grupo-id", str(cid), "--listar"]) == 0
     lines = {int(ln.split()[0]): ln for ln in capsys.readouterr().out.splitlines()}
     assert lines[old].endswith(f" · fuera del sitio · {OLD_PUBLIC}") and lines[leaky].endswith(f" · fuera del sitio · {OLD_READINGS}")
+
+
+def test_the_public_name_heads_the_title_and_the_index(sentinel, setenv, tmp_path):
+    from community_lens.db import connect
+    c, cid = sentinel
+    con = connect()
+    eid = _with_readings(c, cid)
+    assert c.post(f"/api/newspaper/editions/{eid}/approve", json=APPROVE).status_code == 200
+    plain = _site_pages(newspaper.publish(con, cid, tmp_path / "sin") and tmp_path / "sin")
+    for text in plain.values():
+        assert '<h1 class="fp-title">Lo que se compartió</h1>' in text
+    # Con nombre público: encabeza el título de la edición y de la portada, escapado; el del grupo sigue fuera.
+    setenv(CL_PERIODICO_NOMBRE="FAIR.CR <b>")
+    assert c.post(f"/api/newspaper/editions/{eid}/approve", json=APPROVE).status_code == 200
+    named = _site_pages(newspaper.publish(con, cid, tmp_path / "con") and tmp_path / "con")
+    for name, text in named.items():
+        assert '<h1 class="fp-title">FAIR.CR &lt;b&gt; - Lo que se compartió</h1>' in text, name
+        assert "<title>FAIR.CR &lt;b&gt; - Lo que se compartió" in text, name
+        assert GROUP not in text and "FAIR.CR <b>" not in text, name
+    # El subtítulo público va bajo el título en el sitio y reemplaza al nombre del grupo en la versión completa.
+    setenv(CL_PERIODICO_SUBTITULO="Comunidad <General>")
+    assert c.post(f"/api/newspaper/editions/{eid}/approve", json=APPROVE).status_code == 200
+    subbed = _site_pages(newspaper.publish(con, cid, tmp_path / "sub") and tmp_path / "sub")
+    for name, text in subbed.items():
+        assert '<p class="fp-sub">Comunidad &lt;General&gt;</p>' in text and GROUP not in text, name
+    full = c.get(f"/periodico/{eid}").text
+    assert '<p class="fp-sub">Comunidad &lt;General&gt;</p>' in full and f'<p class="fp-sub">{GROUP}' not in full
+
+
+def test_social_posts_carry_their_logo_and_empty_ones_go_to_a_footer_line():
+    from community_lens import edition, newspaper_html
+    from community_lens.brand_icons import LOGOS
+    ed = edition.upgrade(json.loads((__import__("conftest").FIX / "edition_v1.json").read_text(encoding="utf-8"))["data"])
+    base = {"account": "", "text": "La plataforma no entregó contenido público de esta publicación.", "shared": "2026-10-02",
+            "video": False, "preview": False}
+    ed["socials"] = [{**base, "platform": "Instagram", "url": "https://www.instagram.com/p/abc/", "text": "Texto del post", "preview": True},
+                     {**base, "platform": "Facebook", "url": "https://www.facebook.com/share/p/xyz/"},
+                     {**base, "platform": "LinkedIn", "url": "https://www.linkedin.com/posts/x"}]
+    for public in (False, True):
+        page = newspaper_html.render(ed, public=public)
+        body = page.split("</style>")[1]
+        cards, also = body.split('<p class="fp-also">')
+        # Con contenido: tarjeta con el logo de la red en la etiqueta, y sin línea de cuenta si no se conoce.
+        assert f'<path fill="#{LOGOS["Instagram"][0]}" d="{LOGOS["Instagram"][1]}"/>' in cards and "Texto del post" in cards
+        assert "Cuenta no disponible" not in body and "fp-card-who" not in cards.split('id="redes"')[1].split("fp-card-tool")[0]
+        # Sin contenido: ni tarjeta ni texto de relleno; una línea con red, fecha y enlace.
+        assert "facebook.com" not in cards and "linkedin.com" not in cards and "La plataforma no entregó" not in body
+        assert also.startswith("<span>También se compartió:</span>") and 'href="https://www.facebook.com/share/p/xyz/"' in also
+        assert f'd="{LOGOS["Facebook"][1]}"' in also and "Facebook · 2 oct" in also and "💼" in also and "LinkedIn · 2 oct" in also
+        assert "style=" not in body
+    # Si ninguna entregó nada, no queda una fila vacía.
+    ed["socials"], ed["tools"] = ed["socials"][1:], []
+    assert '<div class="fp-row">' not in newspaper_html.render(ed) and "También se compartió:" in newspaper_html.render(ed)

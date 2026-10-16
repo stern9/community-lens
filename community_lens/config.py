@@ -37,6 +37,8 @@ ENV: dict[str, tuple[str, str]] = {
     "gemini_api_key": ("GEMINI_API_KEY", ""),
     "gemini_model": ("GEMINI_MODEL", ""),
     "gemini_label": ("GEMINI_LABEL", ""),
+    "newspaper_name": ("CL_PERIODICO_NOMBRE", ""),
+    "newspaper_subtitle": ("CL_PERIODICO_SUBTITULO", ""),
 }
 ENV_VARS = tuple(var for var, _ in ENV.values())
 # Valores de CL_HOST con los que la app solo se alcanza desde esta máquina.
@@ -79,6 +81,9 @@ class Settings:
     gemini_api_key: str = field(repr=False)
     gemini_model: str
     gemini_label: str
+    # Nombre público del periódico (p. ej. el de la comunidad); nunca el nombre del grupo de WhatsApp.
+    newspaper_name: str
+    newspaper_subtitle: str
 
     @property
     def loopback(self) -> bool:
