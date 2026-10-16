@@ -267,11 +267,11 @@ def periodico(argv: list[str]) -> int:
             res = newspaper.generate(con, chat["id"], chat["name"], d_from, d_to, editor=a.modelo or newspaper.AUTO, readers=readers,
                                      consent_chat=a.confirmo_enviar_chat, order=a.orden, max_articles=a.articulos,
                                      min_articles=newspaper.MIN_ARTICLES if a.continuar else 1)
-            s, eid, counts = res["sent"], res["id"], {k: res[k] for k in ("articles", "socials", "tools", "unread", "readings")}
+            s, eid, counts = res["sent"], res["id"], {k: res[k] for k in ("articles", "socials", "tools", "unread", "others", "readings")}
             out["edition"] = {**edition.listed(con, eid), **counts}
             out["warnings"] = res["warnings"]
             say(f"Edición {eid} ({d_from} a {d_to}): {res['articles']} artículos, {res['socials']} redes, {res['tools']} sitios, "
-                f"{res['unread']} sin leer, {res['readings']} lecturas.")
+                f"{res['unread']} sin leer, {res['others']} en otros enlaces, {res['readings']} lecturas.")
             say(f"Enviado: {s['pages']} páginas a {', '.join([*s['pages_tried'], s['pages_to']])}; " +
                 (f"{s['chat_messages']} mensajes seudonimizados a {', '.join(s['chat_to'])}." if s["chat_messages"] else "nada del chat."))
             for w in res["warnings"]:

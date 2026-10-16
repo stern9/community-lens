@@ -12,6 +12,7 @@ Formatos:
   1  sin el campo "format". Según cuándo se generó puede no traer algunos campos opcionales (hilo, antetítulo,
      nota, cuenta, video, vista previa…) ni sent.pages_tried.
   2  todos los campos presentes, con "format": 2.
+  3  agrega "others": los enlaces que pasaron del tope, sin resumen. Las de antes no los guardaron: lista vacía.
 
 La columna editions.html ya no se usa: las ediciones nuevas la dejan vacía y nunca se lee (las viejas conservan
 lo que tenían; no se borra nada).
@@ -35,7 +36,7 @@ from typing import TypedDict
 
 from . import dates, newspaper_html
 
-FORMAT = 2
+FORMAT = 3
 
 
 class Editor(TypedDict):
@@ -96,6 +97,17 @@ class Unread(TypedDict):
     reason: str
 
 
+class OtherLink(TypedDict):
+    """Un enlace que pasó del tope de su tipo: va en la lista de otros enlaces, sin modelo."""
+    kind: str                # article | social | tool
+    url: str                 # siempre un enlace del chat
+    shared: str
+    domain: str
+    platform: str | None     # solo publicaciones en redes
+    title: str | None        # <title> de la página leída; None: no se leyó o no se pudo, se muestra el dominio
+    published: str | None    # AAAA-MM-DD, solo si la página declara article:published_time
+
+
 class Topic(TypedDict):
     name: str
     messages: int        # contados por código
@@ -125,7 +137,7 @@ Edition = TypedDict("Edition", {
     "format": int, "chat_name": str, "from": str, "to": str, "range_label": str, "created_label": str,
     "facts": Facts, "editor": Editor, "readings": list[Reading],
     "thread": str | None, "lead": Article, "articles": list[Article], "socials": list[Social], "tools": list[Tool],
-    "timeline": list[TimelineEntry], "unread": list[Unread]})
+    "timeline": list[TimelineEntry], "unread": list[Unread], "others": list[OtherLink]})
 
 
 class Sent(TypedDict):
@@ -153,11 +165,12 @@ WHO_MAX = 200                         # caracteres de "por quién" y "por qué c
 TO_MAX = 500                          # caracteres de "adónde" (puede ser una ruta)
 
 
-def build(chat_name: str, d_from: str, d_to: str, facts: Facts, editor: Editor, readings: list[Reading], body: Body) -> Edition:
+def build(chat_name: str, d_from: str, d_to: str, facts: Facts, editor: Editor, readings: list[Reading], body: Body,
+          others: list[OtherLink]) -> Edition:
     return {"format": FORMAT, "chat_name": chat_name, "from": d_from, "to": d_to, "range_label": dates.range_label(d_from, d_to),
             "created_label": dates.long_day(datetime.now().astimezone()), "facts": facts, "editor": editor, "readings": readings,
             "thread": body["thread"], "lead": body["lead"], "articles": body["articles"], "socials": body["socials"],
-            "tools": body["tools"], "timeline": body["timeline"], "unread": body["unread"]}
+            "tools": body["tools"], "timeline": body["timeline"], "unread": body["unread"], "others": others}
 
 
 def _article(a: dict) -> Article:
@@ -170,6 +183,8 @@ def upgrade(d: dict) -> Edition:
     """Lleva una edición guardada con cualquier formato anterior a la forma actual. No toca la base."""
     if d.get("format") == FORMAT:
         return d  # type: ignore[return-value]
+    if d.get("format") == 2:
+        return {**d, "format": FORMAT, "others": []}  # type: ignore[typeddict-item]
     if d.get("format", 1) != 1:
         raise ValueError(f"Edición con un formato que esta versión no conoce ({d.get('format')}).")
     f = d.get("facts") or {}
@@ -191,6 +206,7 @@ def upgrade(d: dict) -> Edition:
         "timeline": [{"date": t["date"], "text": t["text"], "source": t.get("source") or ""} for t in d.get("timeline") or []],
         "unread": [{"url": u["url"], "domain": u["domain"], "shared": u.get("shared", ""), "reason": u.get("reason") or ""}
                    for u in d.get("unread") or []],
+        "others": [],
     }
 
 

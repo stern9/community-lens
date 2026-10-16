@@ -27,7 +27,8 @@ from . import edition, llm, newspaper_html, resources
 
 SOCIAL = {"x.com": "X", "twitter.com": "X", "youtube.com": "YouTube", "youtu.be": "YouTube", "tiktok.com": "TikTok",
           "instagram.com": "Instagram", "linkedin.com": "LinkedIn", "lnkd.in": "LinkedIn", "facebook.com": "Facebook",
-          "fb.watch": "Facebook", "threads.net": "Threads", "threads.com": "Threads", "reddit.com": "Reddit", "bsky.app": "Bluesky"}
+          "fb.watch": "Facebook", "threads.net": "Threads", "threads.com": "Threads", "reddit.com": "Reddit", "bsky.app": "Bluesky",
+          "spotify.com": "Spotify", "spotify.link": "Spotify"}
 # Enlaces que no son contenido: invitaciones, llamadas, formularios, archivos compartidos.
 SKIP = {"chat.whatsapp.com", "wa.me", "api.whatsapp.com", "meet.google.com", "zoom.us", "teams.microsoft.com", "calendly.com",
         "forms.gle", "docs.google.com", "drive.google.com", "maps.app.goo.gl", "goo.gl", "bit.ly", "t.me"}
@@ -165,7 +166,8 @@ def article_limit(n: int | None) -> int:
 # ------------------------------------------------------------- candidatos --
 
 def candidates(con, chat_id: int, d_from: str, d_to: str, order: str = "recent", max_articles: int | None = None) -> dict:
-    """Enlaces del rango, ya clasificados y recortados. No sale nada de la máquina."""
+    """Enlaces del rango, ya clasificados. "items" son los que entran con resumen (recortados al tope de cada tipo) y
+    "rest" los que pasan del tope: van a la lista de otros enlaces, sin modelo. No sale nada de la máquina."""
     groups: dict[str, list[dict]] = {"article": [], "social": [], "tool": []}
     skipped = 0
     # resources.links ya agrupó y contó por identidad del enlace; recién después se decide el tipo.
@@ -176,15 +178,15 @@ def candidates(con, chat_id: int, d_from: str, d_to: str, order: str = "recent",
             continue
         groups[kind].append({"url": it["url"], "domain": _base(it["domain"]), "shared": it["last_shared"][:10],
                              "shares": it["shares"], "kind": kind, "_at": it["last_shared"]})
-    out, total = {}, {}
+    out, rest, total = {}, {}, {}
     for kind, items in groups.items():
         items.sort(key=(lambda x: (x["shares"], x["_at"])) if order == "shared" else (lambda x: x["_at"]), reverse=True)
         for x in items:
             del x["_at"]
         default, top = LIMITS[kind]
         cap = min(max_articles or default, top) if kind == "article" else default
-        total[kind], out[kind] = len(items), items[:cap]
-    return {"items": out, "total": total, "skipped": skipped}
+        total[kind], out[kind], rest[kind] = len(items), items[:cap], items[cap:]
+    return {"items": out, "rest": rest, "total": total, "skipped": skipped}
 
 
 def facts(con, chat_id: int, d_from: str, d_to: str) -> dict:
@@ -371,6 +373,10 @@ def _social(url: str, get) -> tuple[str, str]:  # get(url, ua=UA) = http_get ya 
             fields = {"texto": o.get("title", ""), "cuenta": o.get("author_name", "") or account}
         except (NewspaperError, json.JSONDecodeError):
             fields = {"cuenta": account, "nota": "Solo se conoce la cuenta; el texto del video no estuvo disponible."}
+    elif plat == "Spotify":
+        target = get(url)[0] if host == "spotify.link" else url  # el enlace corto redirige al de open.spotify.com
+        o = json.loads(get("https://open.spotify.com/oembed?url=" + quote(target, safe=""))[1])
+        fields = {"titulo": o.get("title", ""), "tipo": "episodio, canción, álbum o lista de Spotify"}
     else:
         page = get(url, META_UA if plat in META_PLATFORMS else UA)[1]
         title, _ = extract(page)
@@ -500,7 +506,8 @@ Reglas:
 - No escribás URLs ni enlaces: referite a cada elemento solo por su "id". No inventés ids.
 - Usá únicamente lo que dice el texto de cada página. No agregués datos, cifras ni citas que no estén ahí.
 - "articulos": uno por cada enlace de tipo ARTÍCULO; resumen de 2 a 4 oraciones. Si solo pudiste ver el titular o una
-  entradilla, resumí eso y decilo en "nota". "principal" es el id del artículo que encabeza la edición.
+  entradilla, resumí eso y decilo en "nota". "principal" es el id del artículo que encabeza la edición: el de más
+  relevancia para la comunidad, o el que mejor representa el hilo de la edición.
 - "redes": uno por cada enlace de tipo RED SOCIAL; 1 o 2 oraciones sobre de qué trata. Si es un video, aclará que el
   resumen sale del título o la descripción, no del video.
 - "sitios": uno por cada enlace de tipo SITIO; qué es según su propio sitio, en 1 o 2 oraciones, sin evaluarlo.
@@ -548,6 +555,42 @@ def _s(v, limit: int = 600) -> str:
     return re.sub(r"\s+", " ", str(v)).strip()[:limit] if isinstance(v, (str, int, float)) and not isinstance(v, bool) else ""
 
 
+def _lead(articles: list[dict], by_id: dict[int, dict], chosen) -> dict | None:
+    """El artículo que encabeza: el que más veces se compartió en el chat, si se compartió más de una vez y ningún
+    otro empata con él (lo cuenta el código). Si no, el que eligió el modelo; si su id no sirve, el primero."""
+    counts = [by_id[a["id"]]["shares"] for a in articles]
+    top = max(counts, default=0)
+    if top > 1 and counts.count(top) == 1:
+        return articles[counts.index(top)]
+    return next((a for a in articles if a["id"] == chosen), articles[0] if articles else None)
+
+
+def published_day(text: str) -> str | None:
+    """AAAA-MM-DD de article:published_time, si la página lo declara (extract lo deja al comienzo del texto). Nunca se
+    adivina: sin ese metadato, None."""
+    m = re.search(r"^\[article:published_time\] (\d{4}-\d{2}-\d{2})", text or "", re.M)
+    if not m:
+        return None
+    try:
+        return date.fromisoformat(m.group(1)).isoformat()
+    except ValueError:
+        return None
+
+
+def other_links(items: list[dict], pages: dict[str, dict]) -> list[dict]:
+    """La lista de otros enlaces: los que pasaron del tope, sin modelo. Título de la página leída (o nada: se muestra el
+    dominio), fecha de publicación si la página la declara, y la red para las publicaciones (de esas no se lee nada)."""
+    out = []
+    for it in items:
+        page = pages.get(it["url"]) or {}
+        ok = page.get("status") == "ok" and it["kind"] != "social"
+        out.append({"kind": it["kind"], "url": it["url"], "shared": it["shared"], "domain": it["domain"],
+                    "platform": platform(it["domain"]) if it["kind"] == "social" else None,
+                    "title": _s(page.get("title"), 200) or None if ok else None,
+                    "published": published_day(page.get("text", "")) if ok and it["kind"] == "article" else None})
+    return out
+
+
 def assemble(raw: dict, items: list[dict], pages: dict[str, dict]) -> dict:
     """Valida lo que devolvió el modelo y lo une con los enlaces reales. Lo que no calza se descarta.
     Devuelve un edition.Body, salvo que "lead" puede ser None si el modelo no dejó ningún artículo utilizable."""
@@ -568,7 +611,7 @@ def assemble(raw: dict, items: list[dict], pages: dict[str, dict]) -> dict:
                  "summary": [s for s in (_s(x) for x in (e.get("resumen") or [])[:4]) if s], "note": _s(e.get("nota"), 300) or None}
                 for e, it in entries("articulos", "article")]
     articles = [a for a in articles if a["summary"]]
-    lead = next((a for a in articles if a["id"] == raw.get("principal")), articles[0] if articles else None)
+    lead = _lead(articles, by_id, raw.get("principal"))
     socials = [{"url": it["url"], "shared": it["shared"], "platform": platform(it["domain"]), "account": _s(e.get("cuenta"), 100) or None,
                 "text": _s(e.get("texto")), "video": bool(e.get("video")), "preview": True} for e, it in entries("redes", "social")]
     tools = [{"url": it["url"], "shared": it["shared"], "name": _s(e.get("nombre"), 80) or it["domain"], "text": _s(e.get("texto")),
@@ -667,9 +710,15 @@ def generate(con, chat_id: int, chat_name: str, d_from: str | None, d_to: str | 
     for n, it in enumerate(items, 1):
         it["id"] = n
 
+    # Lo que pasa del tope no va al modelo: va a la lista de otros enlaces, con el título de su página si se pudo leer.
+    rest = c["items"]["article"][len(chosen):] + c["rest"]["article"] + c["rest"]["tool"] + c["rest"]["social"]
+    pages |= load_pages(con, [it for it in rest if it["kind"] != "social" and it["url"] not in pages], net)
+    others_list = other_links(rest, pages)
+
     prompt, errors = editor_input(items, pages), []
-    if n_articles > len(chosen):  # `chosen` incluye los que no se pudieron leer: esos no "quedaron fuera", están en "No se pudo leer"
-        errors.append(f"{n_articles - len(chosen)} de los {n_articles} artículos del rango quedaron fuera por el tope de {cap}.")
+    if n_articles > len(chosen):  # `chosen` incluye los que no se pudieron leer: esos están en "No se pudo leer"
+        errors.append(f"{n_articles - len(chosen)} de los {n_articles} artículos del rango van sin resumen, en la lista de otros "
+                      f"enlaces (tope de {cap}).")
     for n, ed in enumerate(editors, 1):
         try:
             body = assemble(llm.complete_json(ed, EDITOR_SYSTEM, prompt, transport), items, pages)
@@ -688,13 +737,13 @@ def generate(con, chat_id: int, chat_name: str, d_from: str | None, d_to: str | 
         except llm.LLMError as err:
             errors.append(f"{p.label}: {err}")
 
-    data = edition.build(chat_name, d_from, d_to, facts(con, chat_id, d_from, d_to), ed.public(), readings, body)
+    data = edition.build(chat_name, d_from, d_to, facts(con, chat_id, d_from, d_to), ed.public(), readings, body, others_list)
     sent: edition.Sent = {"pages_to": ed.label, "pages_tried": [x.label for x in editors[:n - 1]],  # los que recibieron el texto y fallaron
                           "pages": sum(1 for it in items if pages[it["url"]]["status"] == "ok"),
                           "chat_messages": len(msgs) if read_by else 0, "chat_to": [p.label for p in read_by]}
     edition_id = edition.save(con, chat_id, data, sent)
     return {"id": edition_id, "status": "borrador", "sent": sent, "warnings": errors, "articles": 1 + len(body["articles"]),
-            "socials": len(body["socials"]), "tools": len(body["tools"]), "unread": len(body["unread"]), "readings": len(readings)}
+            "socials": len(body["socials"]), "tools": len(body["tools"]), "unread": len(body["unread"]), "others": len(others_list), "readings": len(readings)}
 
 
 def editions(con, chat_id: int) -> list[dict]:

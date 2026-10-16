@@ -468,9 +468,10 @@ def test_new_editions_declare_their_format_and_do_not_store_the_page(client):
     assert set(data["socials"][0]) == set(edition.Social.__annotations__) and set(data["tools"][0]) == set(edition.Tool.__annotations__)
     assert set(data["unread"][0]) == set(edition.Unread.__annotations__) and set(data["timeline"][0]) == set(edition.TimelineEntry.__annotations__)
     assert set(res["sent"]) == set(edition.Sent.__annotations__) and set(data["facts"]) == set(edition.Facts.__annotations__)
-    # Lo único nuevo respecto de la forma anterior es el número de formato.
+    # Lo único nuevo respecto de la forma anterior es el número de formato y la lista de otros enlaces (vacía: nada pasa del tope).
     v1 = json.loads((__import__("conftest").FIX / "edition_v1.json").read_text(encoding="utf-8"))["data"]
-    assert {k: v for k, v in data.items() if k not in ("format", "created_label")} == {k: v for k, v in v1.items() if k != "created_label"}
+    assert data["others"] == []
+    assert {k: v for k, v in data.items() if k not in ("format", "created_label", "others")} == {k: v for k, v in v1.items() if k != "created_label"}
 
 
 # ------------------------------------------------------- --continuar (#29) --
@@ -576,14 +577,25 @@ def test_continue_needs_the_minimum_of_articles(no_network, setenv, tmp_path, co
     assert models.requests == net.requests == [] and newspaper.editions(con, newspaper.find_chat(con, "Semanal")["id"]) == []
 
 
-def test_articles_over_the_cap_are_reported(no_network, setenv, con):
+def test_articles_over_the_cap_go_to_the_list_of_other_links(no_network, setenv, con):
     from conftest import do_import
+
+    from community_lens import edition
     setenv(ANTHROPIC_API_KEY="k-demo")
+    _, models = no_network
     cid = do_import(con, "c.txt", data=_export("2026-10-07"), date_order="MDY")["chat_id"]
     res = newspaper.generate(con, cid, "Demo", "2026-10-01", "2026-10-07", editor="auto", readers=[], consent_chat=False)
-    assert "6 de los 14 artículos del rango quedaron fuera por el tope de 8." in res["warnings"]
+    assert "6 de los 14 artículos del rango van sin resumen, en la lista de otros enlaces (tope de 8)." in res["warnings"]
+    _, ed = edition.load_row(con, res["id"])
+    shown = {ed["lead"]["url"], *(a["url"] for a in ed["articles"]), *(u["url"] for u in ed["unread"])}
+    assert res["others"] == 6 and [x["kind"] for x in ed["others"]] == ["article"] * 6 and not shown & {x["url"] for x in ed["others"]}
+    # El modelo no los vio: ninguno de esos enlaces está en lo que se le mandó.
+    sent_to_model = json.dumps([r for r in models.requests], ensure_ascii=False)
+    assert all(x["url"] not in sent_to_model for x in ed["others"])
+    page = newspaper.edition_html(con, res["id"], public=True)[0]
+    assert "— Otros enlaces compartidos —" in page and 'href="#otros">🔗 6 enlaces más' in page
     res = newspaper.generate(con, cid, "Demo", "2026-10-01", "2026-10-04", editor="auto", readers=[], consent_chat=False)
-    assert not any("quedaron fuera" in w for w in res["warnings"])
+    assert not any("lista de otros enlaces" in w for w in res["warnings"]) and res["others"] == 0
 
 
 def test_continue_refuses_an_explicit_range(client, capsys):
@@ -1469,3 +1481,47 @@ def test_social_posts_carry_their_logo_and_empty_ones_go_to_a_footer_line():
     # Si ninguna entregó nada, no queda una fila vacía.
     ed["socials"], ed["tools"] = ed["socials"][1:], []
     assert '<div class="fp-row">' not in newspaper_html.render(ed) and "También se compartió:" in newspaper_html.render(ed)
+
+def test_the_most_shared_article_leads_unless_there_is_a_tie():
+    arts = [{"id": 1}, {"id": 2}, {"id": 3}]
+    by_id = lambda *shares: {n: {"shares": s} for n, s in enumerate(shares, 1)}
+    assert newspaper._lead(arts, by_id(1, 3, 2), 1)["id"] == 2        # el chat manda: se compartió más que ninguno
+    assert newspaper._lead(arts, by_id(1, 1, 1), 3)["id"] == 3        # todos una vez: elige el modelo
+    assert newspaper._lead(arts, by_id(2, 2, 1), 3)["id"] == 3        # empate arriba: elige el modelo
+    assert newspaper._lead(arts, by_id(1, 1, 1), 99)["id"] == 1       # id inventado: el primero
+    assert newspaper._lead(arts[:1], by_id(2), None)["id"] == 1 and newspaper._lead([], {}, 1) is None
+
+
+def test_other_links_take_the_page_title_and_only_a_declared_publication_date():
+    pages = {"https://a.example/n": {"status": "ok", "title": "Una nota  vieja", "text": "[og:title] x\n[article:published_time] 2024-03-03T10:00:00Z\n\ncuerpo"},
+             "https://b.example/n": {"status": "ok", "title": "Sin fecha", "text": "[date] 2020-01-01\n\ncuerpo"},
+             "https://c.example/n": {"status": "failed", "title": "", "text": "", "reason": "HTTP 404"},
+             "https://d.example/x": {"status": "ok", "title": "Herramienta", "text": "[article:published_time] 2024-13-40"}}
+    items = [{"kind": "article", "url": u, "shared": "2026-10-02", "domain": u[8:17]} for u in list(pages)[:3]]
+    items += [{"kind": "tool", "url": "https://d.example/x", "shared": "2026-10-03", "domain": "d.example"},
+              {"kind": "social", "url": "https://www.youtube.com/watch?v=1", "shared": "2026-10-04", "domain": "youtube.com"}]
+    out = newspaper.other_links(items, pages)
+    assert [(x["title"], x["published"], x["platform"]) for x in out] == [
+        ("Una nota vieja", "2024-03-03", None), ("Sin fecha", None, None), (None, None, None), ("Herramienta", None, None),
+        (None, None, "YouTube")]
+
+
+def test_other_links_section_groups_by_kind_and_escapes():
+    from community_lens import edition, newspaper_html
+    from community_lens.brand_icons import LOGOS
+    v1 = json.loads((__import__("conftest").FIX / "edition_v1.json").read_text(encoding="utf-8"))["data"]
+    v2 = edition.upgrade(v1) | {"format": 2}
+    del v2["others"]
+    ed = edition.upgrade(v2)                                           # una de formato 2 se abre con la lista vacía
+    assert ed["others"] == [] and "Otros enlaces compartidos" not in newspaper_html.render(ed)
+    link = {"shared": "2026-10-02", "platform": None, "title": None, "published": None}
+    ed["others"] = [{**link, "kind": "tool", "url": "https://h.example/", "domain": "h.example"},
+                    {**link, "kind": "social", "url": "https://www.instagram.com/p/z/", "domain": "instagram.com", "platform": "Instagram"},
+                    {**link, "kind": "article", "url": "https://m.example/n", "domain": "m.example", "title": "Nota <b>", "published": "2024-03-03"}]
+    for public in (False, True):
+        page = newspaper_html.render(ed, public=public).split("</style>")[1]
+        section = page.split('id="otros">')[1]
+        assert section.index("<h3>Artículos</h3>") < section.index("<h3>Redes sociales</h3>") < section.index("<h3>Sitios</h3>")
+        assert ">Nota &lt;b&gt;</a>" in section and " — m.example · compartido 2 oct · publicado 3 mar 2024" in section
+        assert f'd="{LOGOS["Instagram"][1]}"' in section and ">h.example</a>" in section and "Nota <b>" not in page
+        assert 'href="#otros">🔗 3 enlaces más</a>' in page

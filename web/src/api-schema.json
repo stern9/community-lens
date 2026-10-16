@@ -2512,6 +2512,10 @@
         "id": {
           "type": "number"
         },
+        "others": {
+          "description": "Enlaces que pasaron del tope: van sin resumen, en la lista de otros enlaces.",
+          "type": "number"
+        },
         "readings": {
           "type": "number"
         },
@@ -2548,6 +2552,7 @@
         "socials",
         "tools",
         "unread",
+        "others",
         "readings"
       ],
       "type": "object"

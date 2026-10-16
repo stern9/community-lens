@@ -126,7 +126,7 @@ function linksFound(p: NewspaperPreview): Child[] {
     h("p", null, kind("fact", "hecho"), ` ${n(f.messages)} mensajes de ${n(f.participants)} participantes en el rango; ${n(f.messages_with_links)} con enlaces.`),
     p.links.article.length ? null : h("p", { class: "error" }, "No hay artículos compartidos en ese rango: no se puede armar una edición."),
     LINK_KINDS.map((k) => h("details", null,
-      h("summary", null, `${LINK_KIND[k]}: ${n(p.links[k].length)} entran` + (p.links_total[k] > p.links[k].length ? ` de ${n(p.links_total[k])} compartidos` : "")),
+      h("summary", null, `${LINK_KIND[k]}: ${n(p.links[k].length)} con resumen` + (p.links_total[k] > p.links[k].length ? ` y ${n(p.links_total[k] - p.links[k].length)} más en la lista de otros enlaces` : "")),
       h("ol", { class: "linklist" }, p.links[k].map((l) => h("li", null, `${l.shared} · `, h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer" }, l.url)))))),
     p.links_skipped ? h("p", null, h("small", null, `${n(p.links_skipped)} enlaces se omiten por no ser contenido (invitaciones, llamadas, formularios, archivos).`)) : null];
 }

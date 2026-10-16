@@ -178,6 +178,17 @@ def test_social_card_for_other_platforms_reads_only_public_metadata():
     assert (wall["status"], wall["reason"]) == ("failed", "la plataforma no entregó contenido público")
 
 
+def test_spotify_is_a_social_post_read_from_its_public_embed():
+    assert newspaper.link_kind("https://open.spotify.com/episode/abc?si=1", "open.spotify.com") == "social"
+    assert newspaper.platform("open.spotify.com") == "Spotify" == newspaper.platform("spotify.link")
+    page, asked = social("https://open.spotify.com/episode/abc", lambda url: (200, {}, '{"title": "Episodio demo"}'))
+    assert asked == ["https://open.spotify.com/oembed?url=https%3A%2F%2Fopen.spotify.com%2Fepisode%2Fabc"]     # nunca la página
+    assert page["text"].splitlines() == ["[plataforma] Spotify", "[titulo] Episodio demo", "[tipo] episodio, canción, álbum o lista de Spotify"]
+    short = {"https://spotify.link/x": (302, {"Location": "https://open.spotify.com/show/s"}, ""),
+             "https://open.spotify.com/show/s": (200, HTML, ""),
+             "https://open.spotify.com/oembed?url=https%3A%2F%2Fopen.spotify.com%2Fshow%2Fs": (200, {}, '{"title": "Un programa"}')}
+    assert "[titulo] Un programa" in social("https://spotify.link/x", short.__getitem__)[0]["text"]
+
 def test_instagram_and_facebook_are_asked_as_a_tool_not_as_a_browser():
     """Meta le da a un navegador sin sesión la app vacía; a un cliente que se identifica como herramienta, la ficha og."""
     net = FakeNet(lambda url: (200, HTML, '<title>Facebook</title><meta property="og:title" content="Página Demo">'
