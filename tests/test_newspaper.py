@@ -1103,13 +1103,15 @@ def test_command_acts_on_a_saved_edition_without_generating(no_network, setenv, 
     check("NewspaperEdition", res["edition"])
     assert res["edition"] == newspaper.editions(con, cid)[0] and res["edition"]["approval"]["to"] == str(site)
     assert res["site"]["files"] == 2 and (site / "ediciones" / "2026-10-01_a_2026-10-07.html").exists() and "Jaime" not in err
+    assert f"Edición {eid} aprobada: se escribe ahora en {site}." in err and "la próxima vez" not in err
     # Ni el modelo ni las páginas: actuar no saca nada de la máquina.
     assert len(models.requests) == calls and len(net.requests) == pages
     code, res, _ = _json(capsys, "--grupo-id", str(cid), "--edicion", str(eid), "--aprobar", "--aprobado-por", "Jaime", "--canal", "correo",
                          "--destino", "web de la comunidad")
     assert (code, res["edition"]["approval"]["via"], res["edition"]["approval"]["to"], res["site"]) == (0, "correo", "web de la comunidad", None)
-    code, res, _ = _json(capsys, "--grupo-id", str(cid), "--edicion", str(eid), "--aprobar", "--aprobado-por", "Jaime", "--canal", "correo")
+    code, res, err = _json(capsys, "--grupo-id", str(cid), "--edicion", str(eid), "--aprobar", "--aprobado-por", "Jaime", "--canal", "correo")
     assert (code, res["edition"]["approval"]["to"]) == (0, None)  # sin --destino ni --salida no se inventa un destino
+    assert "entra al sitio la próxima vez que se escriba con --salida" in err
     assert "hasta 200 caracteres" in _usage_error(capsys, "--grupo-id", str(cid), "--edicion", str(eid), "--aprobar", "--aprobado-por", "x" * 201,
                                                   "--canal", "correo")
     # La edición tiene que ser del grupo indicado.

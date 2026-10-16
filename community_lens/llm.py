@@ -14,7 +14,7 @@ import http.client
 import json
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .config import settings
 
@@ -31,7 +31,7 @@ class Provider:
     name: str    # anthropic | openai | gemini
     label: str   # cómo se muestra: "Claude", "OpenAI", "Gemini"
     model: str
-    key: str     # nunca se registra ni se devuelve por la API
+    key: str = field(repr=False)  # nunca se registra ni se devuelve por la API (ni aparece en un repr o un traceback)
     base_url: str = ""
 
     def public(self) -> dict:

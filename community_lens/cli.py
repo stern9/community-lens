@@ -126,11 +126,13 @@ def _act(con, chat, a, approve_to: str | None, say) -> str:
         raise newspaper.NewspaperError(f"La edición {a.edicion} no existe o no es del grupo {chat['id']}; --listar muestra las suyas.")
     if a.aprobar:
         edition.approve(con, a.edicion, a.aprobado_por, a.canal, approve_to)
-        say(f"Edición {a.edicion} aprobada: entra al sitio la próxima vez que se escriba con --salida.")
+        say(f"Edición {a.edicion} aprobada: " + (f"se escribe ahora en {a.salida}." if a.salida else
+                                                    "entra al sitio la próxima vez que se escriba con --salida."))
         return "aprobada"
     if a.descartar:
         edition.discard(con, a.edicion)
-        say(f"Edición {a.edicion} descartada: sale del sitio la próxima vez que se escriba con --salida.")
+        say(f"Edición {a.edicion} descartada: " + (f"sale ahora de {a.salida}." if a.salida else
+                                                      "sale del sitio la próxima vez que se escriba con --salida."))
         return "descartada"
     if a.recuperar:
         edition.restore(con, a.edicion)
