@@ -16,6 +16,7 @@ import json
 import re
 import socket
 import ssl
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from email.message import Message
@@ -208,13 +209,13 @@ class _Text(HTMLParser):
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.skip, self.chunks, self.meta, self.title, self._in_title = 0, [], {}, "", False
+        self.skip, self.chunks, self.meta, self.title, self._in_title, self._titled = 0, [], {}, "", False, False
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
         if tag in self.DROP:
             self.skip += 1
-        elif tag == "title":
+        elif tag == "title" and not self.skip and not self._titled:  # el de la página; no el de un ícono <svg>
             self._in_title = True
         elif tag == "meta":
             key = (a.get("property") or a.get("name") or "").lower()
@@ -226,8 +227,8 @@ class _Text(HTMLParser):
     def handle_endtag(self, tag):
         if tag in self.DROP and self.skip:
             self.skip -= 1
-        elif tag == "title":
-            self._in_title = False
+        elif tag == "title" and self._in_title:
+            self._in_title, self._titled = False, True
 
     def handle_data(self, data):
         if self._in_title:
@@ -565,6 +566,43 @@ def _lead(articles: list[dict], by_id: dict[int, dict], chosen) -> dict | None:
     return next((a for a in articles if a["id"] == chosen), articles[0] if articles else None)
 
 
+def _meta_line(text: str, key: str) -> str:
+    """El valor de una línea "[clave] valor" del texto guardado de una página (extract y _social las dejan al comienzo)."""
+    m = re.search(rf"^\[{re.escape(key)}\] (.+)$", text or "", re.M)
+    return m.group(1).strip() if m else ""
+
+
+def _norm(s: str) -> str:
+    """Para comparar nombres de medios: sin tildes, sin mayúsculas, solo letras y números."""
+    s = unicodedata.normalize("NFKD", s.casefold())
+    return re.sub(r"[^a-z0-9]", "", "".join(c for c in s if not unicodedata.combining(c)))
+
+
+TITLE_SEPS = (" | ", " • ", " :: ", " » ", " — ", " – ", " - ")
+LOOSE_SEPS = {" | ", " • ", " :: ", " » "}  # casi nunca van dentro de un titular: admiten recortar una cola corta cualquiera
+
+
+def clean_title(title: str, og_title: str, site: str, domain: str) -> str:
+    """El titular de una página para la lista, sin modelo: el og:title si lo declara, si no el <title>, sin la cola que
+    repite el medio (" | La Nación", " - TechCrunch"). Un guion solo se recorta si lo que sigue es el medio: en
+    "Costa Rica - Panamá" es parte del titular. Vacío si no queda nada que diga más que el dominio."""
+    t = _s(og_title or title, 300)
+    labels = [x for x in _base(domain).split(".") if x not in ("co", "com", "org", "net", "ac", "go", "or")]
+    base, own = _norm("".join(labels[:-1] or labels)), _norm(site)
+    for sep in TITLE_SEPS:
+        if sep not in t:
+            continue
+        head, tail = t.rsplit(sep, 1)
+        nt = _norm(tail)
+        same = bool(nt) and (nt == own or (len(nt) >= 4 and len(base) >= 4 and (nt in base or base in nt)))
+        loose = sep in LOOSE_SEPS and len(tail) <= 30 and not re.search(r"\d", tail) and len(head) >= 20
+        if (same or loose) and len(head.strip()) >= 4:
+            t = head.strip()
+        break
+    t = t.strip(" -–—|•·")
+    return "" if len(t) < 4 or _norm(t) in {base, _norm(_base(domain)), own, "home", "inicio"} else t[:200]
+
+
 def published_day(text: str) -> str | None:
     """AAAA-MM-DD de article:published_time, si la página lo declara (extract lo deja al comienzo del texto). Nunca se
     adivina: sin ese metadato, None."""
@@ -578,16 +616,21 @@ def published_day(text: str) -> str | None:
 
 
 def other_links(items: list[dict], pages: dict[str, dict]) -> list[dict]:
-    """La lista de otros enlaces: los que pasaron del tope, sin modelo. Título de la página leída (o nada: se muestra el
-    dominio), fecha de publicación si la página la declara, y la red para las publicaciones (de esas no se lee nada)."""
+    """La lista de otros enlaces: los que pasaron del tope, sin modelo. De una página, su titular limpio (o nada: se
+    muestra el dominio) y la fecha de publicación si la declara; de una publicación en redes, la red, lo que la
+    plataforma publica de ella (texto del post o título del video) y la cuenta."""
     out = []
     for it in items:
         page = pages.get(it["url"]) or {}
-        ok = page.get("status") == "ok" and it["kind"] != "social"
+        text = page.get("text", "") if page.get("status") == "ok" else ""
+        social = it["kind"] == "social"
+        title = clean_title(page.get("title", ""), _meta_line(text, "og:title"), _meta_line(text, "og:site_name"), it["domain"]) \
+            if text and not social else ""
         out.append({"kind": it["kind"], "url": it["url"], "shared": it["shared"], "domain": it["domain"],
-                    "platform": platform(it["domain"]) if it["kind"] == "social" else None,
-                    "title": _s(page.get("title"), 200) or None if ok else None,
-                    "published": published_day(page.get("text", "")) if ok and it["kind"] == "article" else None})
+                    "platform": platform(it["domain"]) if social else None, "title": title or None,
+                    "published": published_day(text) if text and it["kind"] == "article" else None,
+                    "caption": _s(_meta_line(text, "texto") or _meta_line(text, "titulo"), 200) or None if social else None,
+                    "account": _s(_meta_line(text, "cuenta") or _meta_line(text, "canal"), 100) or None if social else None})
     return out
 
 
@@ -710,9 +753,9 @@ def generate(con, chat_id: int, chat_name: str, d_from: str | None, d_to: str | 
     for n, it in enumerate(items, 1):
         it["id"] = n
 
-    # Lo que pasa del tope no va al modelo: va a la lista de otros enlaces, con el título de su página si se pudo leer.
+    # Lo que pasa del tope no va al modelo: va a la lista de otros enlaces, con lo que su página o su plataforma publica.
     rest = c["items"]["article"][len(chosen):] + c["rest"]["article"] + c["rest"]["tool"] + c["rest"]["social"]
-    pages |= load_pages(con, [it for it in rest if it["kind"] != "social" and it["url"] not in pages], net)
+    pages |= load_pages(con, [it for it in rest if it["url"] not in pages], net)
     others_list = other_links(rest, pages)
 
     prompt, errors = editor_input(items, pages), []

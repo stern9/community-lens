@@ -1459,7 +1459,7 @@ def test_the_public_name_heads_the_title_and_the_index(sentinel, setenv, tmp_pat
 
 def test_social_posts_carry_their_logo_and_empty_ones_go_to_a_footer_line():
     from community_lens import edition, newspaper_html
-    from community_lens.brand_icons import LOGOS
+    from community_lens.brand_icons import DRAWN, LOGOS
     ed = edition.upgrade(json.loads((__import__("conftest").FIX / "edition_v1.json").read_text(encoding="utf-8"))["data"])
     base = {"account": "", "text": "La plataforma no entregó contenido público de esta publicación.", "shared": "2026-10-02",
             "video": False, "preview": False}
@@ -1476,7 +1476,8 @@ def test_social_posts_carry_their_logo_and_empty_ones_go_to_a_footer_line():
         # Sin contenido: ni tarjeta ni texto de relleno; una línea con red, fecha y enlace.
         assert "facebook.com" not in cards and "linkedin.com" not in cards and "La plataforma no entregó" not in body
         assert also.startswith("<span>También se compartió:</span>") and 'href="https://www.facebook.com/share/p/xyz/"' in also
-        assert f'd="{LOGOS["Facebook"][1]}"' in also and "Facebook · 2 oct" in also and "💼" in also and "LinkedIn · 2 oct" in also
+        assert f'd="{LOGOS["Facebook"][1]}"' in also and "Facebook · 2 oct" in also and f'd="{DRAWN["LinkedIn"][1][1]}"' in also
+        assert "LinkedIn · 2 oct" in also
         assert "style=" not in body
     # Si ninguna entregó nada, no queda una fila vacía.
     ed["socials"], ed["tools"] = ed["socials"][1:], []
@@ -1492,36 +1493,97 @@ def test_the_most_shared_article_leads_unless_there_is_a_tie():
     assert newspaper._lead(arts[:1], by_id(2), None)["id"] == 1 and newspaper._lead([], {}, 1) is None
 
 
-def test_other_links_take_the_page_title_and_only_a_declared_publication_date():
-    pages = {"https://a.example/n": {"status": "ok", "title": "Una nota  vieja", "text": "[og:title] x\n[article:published_time] 2024-03-03T10:00:00Z\n\ncuerpo"},
-             "https://b.example/n": {"status": "ok", "title": "Sin fecha", "text": "[date] 2020-01-01\n\ncuerpo"},
+def test_other_links_take_a_clean_title_a_declared_date_and_what_the_platform_publishes():
+    pages = {"https://a.example/n": {"status": "ok", "title": "Una nota  vieja | A Demo",
+                                     "text": "[og:site_name] A Demo\n[article:published_time] 2024-03-03T10:00:00Z\n\ncuerpo"},
+             "https://b.example/n": {"status": "ok", "title": "<title> sucio", "text": "[og:title] Titular de og\n[date] 2020-01-01\n\ncuerpo"},
              "https://c.example/n": {"status": "failed", "title": "", "text": "", "reason": "HTTP 404"},
-             "https://d.example/x": {"status": "ok", "title": "Herramienta", "text": "[article:published_time] 2024-13-40"}}
+             "https://d.example/x": {"status": "ok", "title": "Herramienta", "text": "[article:published_time] 2024-13-40"},
+             "https://x.com/demo/status/1": {"status": "ok", "title": "X: Un anuncio",
+                                             "text": "[plataforma] X\n[texto] Un anuncio\n[cuenta] Medio Demo (@demo)"},
+             "https://www.youtube.com/watch?v=1": {"status": "ok", "title": "", "text": "[plataforma] YouTube\n[titulo] Una charla\n[canal] Canal Demo"},
+             "https://www.instagram.com/p/z/": {"status": "failed", "title": "", "text": "", "reason": "la plataforma no entregó contenido público"}}
     items = [{"kind": "article", "url": u, "shared": "2026-10-02", "domain": u[8:17]} for u in list(pages)[:3]]
-    items += [{"kind": "tool", "url": "https://d.example/x", "shared": "2026-10-03", "domain": "d.example"},
-              {"kind": "social", "url": "https://www.youtube.com/watch?v=1", "shared": "2026-10-04", "domain": "youtube.com"}]
+    items += [{"kind": "tool", "url": "https://d.example/x", "shared": "2026-10-03", "domain": "d.example"}]
+    items += [{"kind": "social", "url": u, "shared": "2026-10-04", "domain": d}
+              for u, d in (("https://x.com/demo/status/1", "x.com"), ("https://www.youtube.com/watch?v=1", "youtube.com"),
+                           ("https://www.instagram.com/p/z/", "instagram.com"))]
     out = newspaper.other_links(items, pages)
-    assert [(x["title"], x["published"], x["platform"]) for x in out] == [
-        ("Una nota vieja", "2024-03-03", None), ("Sin fecha", None, None), (None, None, None), ("Herramienta", None, None),
-        (None, None, "YouTube")]
+    assert [(x["title"], x["published"], x["platform"], x["caption"], x["account"]) for x in out] == [
+        ("Una nota vieja", "2024-03-03", None, None, None), ("Titular de og", None, None, None, None), (None, None, None, None, None),
+        ("Herramienta", None, None, None, None), (None, None, "X", "Un anuncio", "Medio Demo (@demo)"),
+        (None, None, "YouTube", "Una charla", "Canal Demo"), (None, None, "Instagram", None, None)]
 
 
-def test_other_links_section_groups_by_kind_and_escapes():
+@pytest.mark.parametrize(("title", "og", "site", "domain", "clean"), [
+    ("Editorial: Los datos de todos | La Nación", "", "", "nacion.com", "Editorial: Los datos de todos"),
+    ("An Anthropic model sent a false tip | TechCrunch", "", "", "techcrunch.com", "An Anthropic model sent a false tip"),
+    ("Proponen crear renta básica universal • Semanario Universidad", "", "", "semanariouniversidad.com", "Proponen crear renta básica universal"),
+    ("Researchers launch AI nutrition labels — MIT Media Lab", "", "MIT Media Lab", "media.mit.edu", "Researchers launch AI nutrition labels"),
+    ("Certified. - by Ruben Hassid - How to AI", "", "", "ruben.substack.com", "Certified. - by Ruben Hassid - How to AI"),
+    ("Costa Rica - Panamá: el acuerdo eléctrico", "", "", "medio.example", "Costa Rica - Panamá: el acuerdo eléctrico"),
+    ("ruido de la página", "El titular de og - Diario Demo", "Diario Demo", "diariodemo.cr", "El titular de og"),
+    ("Inicio", "", "", "algo.example", ""), ("algo.example", "", "", "algo.example", ""),
+])
+def test_clean_title_drops_only_the_outlet_suffix(title, og, site, domain, clean):
+    assert newspaper.clean_title(title, og, site, domain) == clean
+
+
+def test_the_page_title_ignores_the_titles_inside_icons():
+    html = '<html><head><title>El titular</title></head><body><svg><title>Search</title></svg><title>Otro</title><p>Hola</p></body></html>'
+    assert newspaper.extract(html)[0] == "El titular"
+    assert newspaper.extract('<svg><title>Menú</title></svg><title>Después del ícono</title>')[0] == "Después del ícono"
+
+
+def test_other_links_section_folds_long_groups_marks_old_notes_and_escapes():
     from community_lens import edition, newspaper_html
-    from community_lens.brand_icons import LOGOS
+    from community_lens.brand_icons import DRAWN, LOGOS
     v1 = json.loads((__import__("conftest").FIX / "edition_v1.json").read_text(encoding="utf-8"))["data"]
-    v2 = edition.upgrade(v1) | {"format": 2}
-    del v2["others"]
-    ed = edition.upgrade(v2)                                           # una de formato 2 se abre con la lista vacía
-    assert ed["others"] == [] and "Otros enlaces compartidos" not in newspaper_html.render(ed)
-    link = {"shared": "2026-10-02", "platform": None, "title": None, "published": None}
-    ed["others"] = [{**link, "kind": "tool", "url": "https://h.example/", "domain": "h.example"},
-                    {**link, "kind": "social", "url": "https://www.instagram.com/p/z/", "domain": "instagram.com", "platform": "Instagram"},
-                    {**link, "kind": "article", "url": "https://m.example/n", "domain": "m.example", "title": "Nota <b>", "published": "2024-03-03"}]
+    for older in (2, 3):                                               # las de formato 2 y 3 se abren
+        old = edition.upgrade(v1) | {"format": older}
+        if older == 2:
+            del old["others"]
+        else:
+            old["others"] = [{"kind": "tool", "url": "https://h.example/", "shared": "2026-10-02", "domain": "h.example",
+                              "platform": None, "title": None, "published": None}]
+        up = edition.upgrade(old)
+        assert up["format"] == edition.FORMAT and all(x["caption"] is None and x["account"] is None for x in up["others"])
+    ed = edition.upgrade(v1)
+    link = {"shared": "2026-10-02", "platform": None, "title": None, "published": None, "caption": None, "account": None}
+    arts = [{**link, "kind": "article", "url": f"https://m.example/{n}", "domain": "m.example", "title": f"Nota {n}"} for n in range(7)]
+    arts[0] |= {"title": "Nota <b>", "published": "2022-01-27"}
+    arts[1] |= {"published": "2026-09-30"}                              # dos días antes: no lleva marca
+    arts[2] |= {"published": "2026-08-01"}
+    ed["others"] = arts + [
+        {**link, "kind": "social", "url": "https://x.com/d/status/1", "domain": "x.com", "platform": "X", "caption": "Un anuncio", "account": "@d"},
+        {**link, "kind": "social", "url": "https://www.youtube.com/watch?v=1", "domain": "youtube.com", "platform": "YouTube"},
+        {**link, "kind": "social", "url": "https://www.linkedin.com/posts/x", "domain": "linkedin.com", "platform": "LinkedIn"},
+        {**link, "kind": "tool", "url": "https://h.example/", "domain": "h.example"}]
     for public in (False, True):
         page = newspaper_html.render(ed, public=public).split("</style>")[1]
         section = page.split('id="otros">')[1]
-        assert section.index("<h3>Artículos</h3>") < section.index("<h3>Redes sociales</h3>") < section.index("<h3>Sitios</h3>")
-        assert ">Nota &lt;b&gt;</a>" in section and " — m.example · compartido 2 oct · publicado 3 mar 2024" in section
-        assert f'd="{LOGOS["Instagram"][1]}"' in section and ">h.example</a>" in section and "Nota <b>" not in page
-        assert 'href="#otros">🔗 3 enlaces más</a>' in page
+        assert section.index("<span>Artículos</span>") < section.index("<span>Redes sociales</span>") < section.index("<span>Sitios</span>")
+        head, folded = section.split('<details class="fp-ol-more">')[:2]
+        hidden = 2 + len(ed["unread"]) * public                         # en la pública, lo no leído se suma a Artículos
+        assert head.count('class="fp-ol"') == 5 and f'<span class="fp-ol-open">Ver {hidden} más</span>' in folded and "Nota 6" in folded
+        assert ">Nota &lt;b&gt;</a>" in section and "Nota <b>" not in page
+        assert section.count('class="fp-ol-old"') == 2 and ">nota de 2022<" in section and ">nota del 1 ago<" in section
+        assert ">Un anuncio</a>" in section and '<span class="fp-ol-acc">@d</span>' in section and ">Video en YouTube</a>" in section
+        assert f'd="{LOGOS["X"][1]}"' in section and f'd="{DRAWN["LinkedIn"][1][1]}"' in section and "💼" not in section
+        assert 'fp-ol-dim" href="https://h.example/" target="_blank" rel="noopener noreferrer">h.example</a>' in section
+        assert "style=" not in page
+    # Lo que no se pudo leer: en la versión pública va a la lista con su dominio; el motivo queda en la completa.
+    full, pub = newspaper_html.render(ed), newspaper_html.render(ed, public=True)
+    assert "No se pudo leer" in full and "HTTP 404" in full and "No se pudo leer" not in pub and "HTTP 404" not in pub
+    assert 'href="https://caido.example.org/nota/rota"' in pub.split('id="otros">')[1] and 'href="#otros">🔗 12 enlaces más' in pub
+    assert "<span>Enlaces del" in pub and "<span>Datos del" in full
+
+
+def test_a_site_without_preview_goes_to_the_footer_line_not_to_a_card():
+    from community_lens import edition, newspaper_html
+    ed = edition.upgrade(json.loads((__import__("conftest").FIX / "edition_v1.json").read_text(encoding="utf-8"))["data"])
+    ed["tools"] = [{"url": "https://vacio.example/", "shared": "2026-10-03", "name": "vacio.example", "text": "El sitio no entregó texto legible.",
+                    "preview": False}]
+    page = newspaper_html.render(ed, public=True).split("</style>")[1]
+    assert "fp-card-tool" not in page and "El sitio no entregó" not in page and 'href="#sitios"' not in page
+    assert "vacio.example · 3 oct" in page.split('<p class="fp-also">')[1]

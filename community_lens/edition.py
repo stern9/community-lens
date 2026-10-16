@@ -13,6 +13,7 @@ Formatos:
      nota, cuenta, video, vista previa…) ni sent.pages_tried.
   2  todos los campos presentes, con "format": 2.
   3  agrega "others": los enlaces que pasaron del tope, sin resumen. Las de antes no los guardaron: lista vacía.
+  4  cada uno de "others" agrega "caption" y "account" (lo que la plataforma publica de un post). En las de antes, None.
 
 La columna editions.html ya no se usa: las ediciones nuevas la dejan vacía y nunca se lee (las viejas conservan
 lo que tenían; no se borra nada).
@@ -36,7 +37,7 @@ from typing import TypedDict
 
 from . import dates, newspaper_html
 
-FORMAT = 3
+FORMAT = 4
 
 
 class Editor(TypedDict):
@@ -106,6 +107,8 @@ class OtherLink(TypedDict):
     platform: str | None     # solo publicaciones en redes
     title: str | None        # <title> de la página leída; None: no se leyó o no se pudo, se muestra el dominio
     published: str | None    # AAAA-MM-DD, solo si la página declara article:published_time
+    caption: str | None      # solo publicaciones: texto del post o título del video, como lo publica la plataforma
+    account: str | None      # solo publicaciones: cuenta o canal
 
 
 class Topic(TypedDict):
@@ -181,15 +184,22 @@ def _article(a: dict) -> Article:
 
 def upgrade(d: dict) -> Edition:
     """Lleva una edición guardada con cualquier formato anterior a la forma actual. No toca la base."""
-    if d.get("format") == FORMAT:
+    fmt = d.get("format", 1)
+    if fmt == FORMAT:
         return d  # type: ignore[return-value]
-    if d.get("format") == 2:
-        return {**d, "format": FORMAT, "others": []}  # type: ignore[typeddict-item]
-    if d.get("format", 1) != 1:
+    if fmt not in (1, 2, 3):
         raise ValueError(f"Edición con un formato que esta versión no conoce ({d.get('format')}).")
+    if fmt == 1:
+        d = _from_v1(d)
+    others = [{**x, "caption": x.get("caption"), "account": x.get("account")} for x in d.get("others") or []]
+    return {**d, "format": FORMAT, "others": others}  # type: ignore[typeddict-item]
+
+
+def _from_v1(d: dict) -> dict:
+    """Formato 1 (sin "format"): completa los campos opcionales que todavía no existían."""
     f = d.get("facts") or {}
     return {
-        "format": FORMAT, "chat_name": d["chat_name"], "from": d["from"], "to": d["to"],
+        "chat_name": d["chat_name"], "from": d["from"], "to": d["to"],
         "range_label": d.get("range_label") or dates.range_label(d["from"], d["to"]), "created_label": d.get("created_label") or "",
         "facts": {"messages": f.get("messages", 0), "participants": f.get("participants", 0),
                   "messages_with_links": f.get("messages_with_links", 0), "busiest_day": f.get("busiest_day"),

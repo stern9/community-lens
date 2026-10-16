@@ -7,11 +7,12 @@ correr), porque edition.py dibuja con render() al aprobar una edición.
 """
 from __future__ import annotations
 
+from datetime import date
 from html import escape as e
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .brand_icons import LOGOS
+from .brand_icons import DRAWN, LOGOS
 from .config import settings
 from .dates import fmt_day, short_day
 
@@ -61,52 +62,82 @@ def _article(a: Article) -> str:
 
 
 def _mark(plat: str) -> str:
-    """El logo de la red, chico, junto a su nombre: un SVG fijo de brand_icons.py, sin estilos en línea. Sin logo (LinkedIn
-    o una plataforma nueva), su ícono de texto."""
-    if plat in LOGOS:
-        color, path = LOGOS[plat]
-        return f'<svg class="fp-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="#{color}" d="{path}"/></svg>'
+    """El logo de la red, chico, junto a su nombre: un SVG fijo de brand_icons.py, sin estilos en línea. Sin logo (una
+    plataforma nueva), su ícono de texto."""
+    layers = DRAWN.get(plat) or ((LOGOS[plat],) if plat in LOGOS else ())
+    if layers:
+        paths = "".join(f'<path fill="#{color}" d="{path}"/>' for color, path in layers)
+        return f'<svg class="fp-mark" viewBox="0 0 24 24" aria-hidden="true">{paths}</svg>'
     return f'<span aria-hidden="true">{ICON.get(plat, "🔗")}</span>'
 
 
-def _also(socials: list) -> str:
-    """Las publicaciones de las que la plataforma no entregó nada: una línea al pie, con red, fecha y enlace. Una tarjeta
-    vacía pesa lo mismo que una con contenido y se lee como rota."""
-    links = [f'<a class="fp-also-a" href="{e(s["url"], quote=True)}" target="_blank" rel="noopener noreferrer">'
-             f'{_mark(s["platform"])}<span>{e(s["platform"])} · {e(short_day(s["shared"]))}</span></a>' for s in socials]
+def _also(socials: list, tools: list) -> str:
+    """Las publicaciones y los sitios de los que no se pudo leer nada: una línea al pie, con red o dominio, fecha y enlace.
+    Una tarjeta vacía pesa lo mismo que una con contenido y se lee como rota."""
+    entries = [(_mark(s["platform"]), s["platform"], s["url"], s["shared"]) for s in socials]
+    entries += [('<span aria-hidden="true">🧰</span>', t["name"], t["url"], t["shared"]) for t in tools]
+    links = [f'<a class="fp-also-a" href="{e(url, quote=True)}" target="_blank" rel="noopener noreferrer">'
+             f'{mark}<span>{e(name)} · {e(short_day(shared))}</span></a>' for mark, name, url, shared in entries]
     return '<p class="fp-also"><span>También se compartió:</span>' + "".join(links) + "</p>" if links else ""
 
 
 OTHER_GROUPS = (("article", "Artículos"), ("social", "Redes sociales"), ("tool", "Sitios"))
+OTHER_SHOW = 5        # por grupo; el resto queda plegado en "Ver N más"
+OLD_DAYS = 30         # una nota publicada más de esto antes de compartirse lleva la marca "nota de …"
+VIDEO = {"YouTube", "TikTok"}
+
+
+def _old(published: str | None, shared: str) -> str:
+    """La marca de nota vieja: solo si la página declara su fecha y es de más de OLD_DAYS antes de compartirse."""
+    if not published or not shared:
+        return ""
+    p, s = date.fromisoformat(published), date.fromisoformat(shared[:10])
+    if (s - p).days <= OLD_DAYS:
+        return ""
+    label = f"nota de {p.year}" if p.year != s.year else f"nota del {short_day(published)}"
+    return f'<span class="fp-ol-old">{e(label)}</span>'
+
+
+def _other(x: dict) -> str:
+    """Un enlace de la lista: arriba el medio (o la red y la cuenta) y la fecha; abajo, el titular como enlace, en dos
+    líneas a lo sumo. Sin titular, el dominio en gris: no se inventa nada."""
+    if x["kind"] == "social":
+        plat = x["platform"] or x["domain"]
+        kick = _mark(plat) + f'<span class="fp-ol-src">{e(plat)}</span>'
+        kick += f'<span class="fp-ol-acc">{e(x["account"])}</span>' if x["account"] else ""
+        text = x["caption"] or (f"Video en {plat}" if plat in VIDEO else f"Publicación en {plat}")
+        dim = not x["caption"]
+    else:
+        kick = f'<span class="fp-ol-src">{e(x["domain"])}</span>'
+        text, dim = x["title"] or x["domain"], not x["title"]
+    kick += f'<span class="fp-ol-d">{e(short_day(x["shared"]))}</span>' + _old(x["published"], x["shared"])
+    return (f'<li class="fp-ol"><p class="fp-ol-k">{kick}</p><a class="fp-ol-t{" fp-ol-dim" if dim else ""}" '
+            f'href="{e(x["url"], quote=True)}" target="_blank" rel="noopener noreferrer">{e(text)}</a></li>')
 
 
 def _others(links: list) -> str:
-    """Los enlaces que pasaron del tope: un índice por tipo, sin resúmenes. Título de la página o, si no se leyó, el
-    dominio; la red con su logo; la fecha en que se compartió y, si la página la declara, la de publicación."""
+    """Los enlaces que pasaron del tope: un índice por tipo, sin resúmenes, con los primeros OTHER_SHOW a la vista y el
+    resto en un <details> (se abre sin JavaScript)."""
     groups = []
     for kind, label in OTHER_GROUPS:
-        rows = []
-        for x in (x for x in links if x["kind"] == kind):
-            if kind == "social":
-                name = f'<a class="fp-also-a" href="{e(x["url"], quote=True)}" target="_blank" rel="noopener noreferrer">' \
-                       f'{_mark(x["platform"] or "")}<span>{e(x["platform"] or x["domain"])}</span></a>'
-                source = ""
-            else:
-                name = _link(x["url"], x["title"] or x["domain"])
-                source = f' — {e(x["domain"])}' if x["title"] else ""
-            published = f' · publicado {e(short_day(x["published"]))} {e(x["published"][:4])}' if x["published"] else ""
-            rows.append(f'<li>{name}<span class="fp-others-m">{source} · compartido {e(short_day(x["shared"]))}{published}</span></li>')
-        if rows:
-            groups.append(f'<div><h3>{label}</h3><ul>{"".join(rows)}</ul></div>')
+        xs = [x for x in links if x["kind"] == kind]
+        if not xs:
+            continue
+        head, tail = xs[:OTHER_SHOW], xs[OTHER_SHOW:]
+        more = (f'<details class="fp-ol-more"><summary><span class="fp-ol-open">Ver {len(tail)} más</span>'
+                f'<span class="fp-ol-close">Mostrar menos</span></summary><ul>{"".join(_other(x) for x in tail)}</ul></details>'
+                if tail else "")
+        groups.append(f'<div class="fp-ol-g"><h3><span>{label}</span><span class="fp-ol-n">{len(xs)}</span></h3>'
+                      f'<ul>{"".join(_other(x) for x in head)}</ul>{more}</div>')
     if not groups:
         return ""
     return ('<h2 class="fp-section-h" id="otros">— Otros enlaces compartidos —</h2>'
             f'<section class="fp-others">{"".join(groups)}</section>')
 
 
-def _card(tag: str, who: str, text: str, shared: str, url: str, cta: str, *, video=False, preview=True, tool=False, anchor="") -> str:
+def _card(tag: str, who: str, text: str, shared: str, url: str, cta: str, *, video=False, tool=False, anchor="") -> str:
     video_tag = '<span class="fp-tag">video</span>' if video else ""
-    body = f"<p>{e(text)}</p>" + ("" if preview else '<span class="fp-nopreview">sin vista previa disponible</span>')
+    body = f"<p>{e(text)}</p>"
     who_line = f'<div class="fp-card-who">{e(who)}</div>' if who else ""
     return (f'<div class="fp-card{" fp-card-tool" if tool else ""}"{anchor}><div class="fp-item-h">{tag}{video_tag}</div>'
             f'{who_line}{body}'
@@ -133,10 +164,15 @@ def render(d: Edition, *, draft: bool = False, public: bool = False) -> str:
     nav = [f'<a href="#articulos">📰 {plural(1 + len(arts), "artículo", "artículos")}</a>']
     if socials:
         nav.append(f'<a href="#redes">💬 {plural(len(socials), "publicación en redes", "publicaciones en redes")}</a>')
-    if tools:
-        nav.append(f'<a href="#sitios">🧰 {plural(len(tools), "sitio o herramienta", "sitios y herramientas")}</a>')
-    if d["others"]:
-        nav.append(f'<a href="#otros">🔗 {plural(len(d["others"]), "enlace más", "enlaces más")}</a>')
+    if any(t["preview"] for t in tools):  # el ancla está en la primera tarjeta; los sin vista previa van en "También se compartió"
+        n_tools = sum(t["preview"] for t in tools)
+        nav.append(f'<a href="#sitios">🧰 {plural(n_tools, "sitio o herramienta", "sitios y herramientas")}</a>')
+    # En la versión pública, lo que no se pudo leer va a la lista como un artículo más (con su dominio): el motivo
+    # ("HTTP 404") es jerga para quien lee y queda solo en la versión completa.
+    others = d["others"] + ([{"kind": "article", "url": u["url"], "shared": u["shared"], "domain": u["domain"], "platform": None,
+                              "title": None, "published": None, "caption": None, "account": None} for u in d["unread"]] if public else [])
+    if others:
+        nav.append(f'<a href="#otros">🔗 {plural(len(others), "enlace más", "enlaces más")}</a>')
     thread = f'<p class="fp-thread"><b>Hilo de la edición:</b> {e(d["thread"])}</p>' if d["thread"] else ""
 
     timeline = ""
@@ -169,15 +205,15 @@ def render(d: Edition, *, draft: bool = False, public: bool = False) -> str:
         cards = [_card(f'{_mark(s["platform"])}<span>{e(s["platform"])}</span>', s["account"] or "", s["text"], s["shared"], s["url"],
                        f'Ver en {s["platform"]} →', video=s["video"]) for s in socials if s["preview"]]
         cards += [_card('<span aria-hidden="true">🧰</span><span>Sitio</span>', t["name"], t["text"], t["shared"], t["url"], "Ir al sitio →",
-                        preview=t["preview"], tool=True, anchor=' id="sitios"' if i == 0 else "") for i, t in enumerate(tools)]
+                        tool=True, anchor=' id="sitios"' if i == 0 else "") for i, t in enumerate(x for x in tools if x["preview"])]
         strip = ('<section class="fp-strip" id="redes"><div class="fp-strip-h"><h2>Redes sociales y herramientas</h2>'
                  '<span class="fp-swipe">deslizá →</span></div>' + (f'<div class="fp-row">{"".join(cards)}</div>' if cards else "")
-                 + _also([s for s in socials if not s["preview"]]) + "</section>")
+                 + _also([s for s in socials if not s["preview"]], [t for t in tools if not t["preview"]]) + "</section>")
 
     more = ('<h2 class="fp-section-h">— Más artículos compartidos —</h2><section class="fp-cols">'
             + "".join(_article(a) for a in arts) + "</section>") if arts else ""
     unread = ""
-    if d["unread"]:
+    if d["unread"] and not public:
         rows = "".join(f"<li>{_link(u['url'], u['domain'])} · compartido {e(short_day(u['shared']))} · {e(u['reason'])}</li>" for u in d["unread"])
         unread = f'<section class="fp-failed"><h2>No se pudo leer</h2><ul>{rows}</ul></section>'
     band = '\n<p class="fp-draft">Borrador, no compartir</p>' if draft else ""
@@ -201,7 +237,7 @@ def render(d: Edition, *, draft: bool = False, public: bool = False) -> str:
 </head>
 <body><div class="fp-root"><div class="fp-wrap">{band}
 <header>
-<div class="fp-top"><span>{e(d['created_label'])}</span><span>Datos del {e(d['range_label'])}</span></div>
+<div class="fp-top"><span>{e(d['created_label'])}</span><span>{"Enlaces" if public else "Datos"} del {e(d['range_label'])}</span></div>
 <h1 class="fp-title">{_title()}</h1>{sub}
 <nav class="fp-band" aria-label="Secciones">{''.join(nav)}</nav>
 {thread}
@@ -210,7 +246,7 @@ def render(d: Edition, *, draft: bool = False, public: bool = False) -> str:
 {views}
 {strip}
 {more}
-{_others(d["others"])}
+{_others(others)}
 {unread}
 <footer class="fp-foot">{foot}</footer>
 </div></div></body>

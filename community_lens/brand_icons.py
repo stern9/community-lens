@@ -2,8 +2,9 @@
 
 Son los trazos SVG de Simple Icons 16.33.0 (https://simpleicons.org, licencia CC0-1.0), copiados tal cual: un trazo
 por marca en una caja de 24 x 24, y el color de la marca. Las marcas siguen siendo de sus dueños; se usan solo para
-indicar a qué plataforma lleva un enlace, como piden sus guías de marca. LinkedIn no está: Simple Icons lo quitó a
-pedido de la marca, así que usa el ícono de texto de newspaper_html.ICON.
+indicar a qué plataforma lleva un enlace, como piden sus guías de marca. LinkedIn no está en Simple Icons (lo quitó a
+pedido de la marca): su ícono está en DRAWN, dibujado acá a partir de la forma pública de la marca (el "in" blanco
+en un cuadrado redondeado azul), que sus guías permiten usar para enlazar a contenido de LinkedIn.
 
 Para actualizarlos: bajar `icons/<slug>.svg` y `data/simple-icons.json` de una versión fija de simple-icons, revisar
 que cada SVG tenga solo <title> y un <path d="…"> y copiar el trazo y el color acá. No es código que corra: son datos.
@@ -30,4 +31,11 @@ LOGOS: dict[str, tuple[str, str]] = {
                "M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"),
     "Bluesky": ("1185FE",
                "M5.202 2.857C7.954 4.922 10.913 9.11 12 11.358c1.087-2.247 4.046-6.436 6.798-8.501C20.783 1.366 24 .213 24 3.883c0 .732-.42 6.156-.667 7.037-.856 3.061-3.978 3.842-6.755 3.37 4.854.826 6.089 3.562 3.422 6.299-5.065 5.196-7.28-1.304-7.847-2.97-.104-.305-.152-.448-.153-.327 0-.121-.05.022-.153.327-.568 1.666-2.782 8.166-7.847 2.97-2.667-2.737-1.432-5.473 3.422-6.3-2.777.473-5.899-.308-6.755-3.369C.42 10.04 0 4.615 0 3.883c0-3.67 3.217-2.517 5.202-1.026"),
+}
+
+# Plataforma -> capas (color, trazo SVG en 0 0 24 24), de abajo hacia arriba. Para los íconos de más de un color.
+DRAWN: dict[str, tuple[tuple[str, str], ...]] = {
+    "LinkedIn": (("0A66C2", "M4 0h16a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4V4a4 4 0 0 1 4-4z"),
+                 ("FFFFFF", "M7 4.3a2 2 0 1 1 0 4a2 2 0 1 1 0-4zM5.3 9.6h3.4v9.9H5.3zM10.6 9.6h3.3v1.4c.5-.9 1.6-1.7 3.2-1.7 "
+                            "2.9 0 3.6 1.9 3.6 4.4v5.8h-3.4v-5.1c0-1.2-.3-2.2-1.5-2.2-1.3 0-1.8.9-1.8 2.3v5h-3.4z")),
 }
