@@ -47,7 +47,7 @@ def fake_model(provider, system, user):
 
 def approve_drafts(con) -> list[int]:
     """Aprueba los borradores pendientes, como haría quien administra el grupo entre una corrida y la siguiente."""
-    from community_lens import edition
+    from community_lens.newspaper import edition
     ids = [r["id"] for r in con.execute("SELECT id FROM editions WHERE status='borrador' ORDER BY id")]
     for i in ids:
         edition.approve(con, i, "Prueba", "pytest", None)
@@ -394,8 +394,8 @@ def test_edition_saved_with_the_previous_format_still_opens_and_publishes(client
     """tests/fixtures/edition_v1.json es una edición tal como la guardaba la app antes de que el formato tuviera versión."""
     from conftest import FIX
 
-    from community_lens import edition
     from community_lens.db import connect
+    from community_lens.newspaper import edition
     c, cid = client
     v1 = json.loads((FIX / "edition_v1.json").read_text(encoding="utf-8"))
     assert "format" not in v1["data"]
@@ -454,8 +454,8 @@ def test_edition_saved_with_the_previous_format_still_opens_and_publishes(client
 
 
 def test_new_editions_declare_their_format_and_do_not_store_the_page(client):
-    from community_lens import edition
     from community_lens.db import connect
+    from community_lens.newspaper import edition
     c, cid = client
     res = c.post("/api/newspaper/editions", json={"chat_id": cid, "from": "2026-10-01", "to": "2026-10-03", "editor": "anthropic",
                                                    "readers": ["anthropic"], "consent_chat": True}).json()
@@ -513,7 +513,7 @@ def _run(tmp_path, last: str, *extra: str, **kw) -> int:
 def test_continue_range_follows_the_last_edition(con):
     from conftest import do_import
 
-    from community_lens import edition
+    from community_lens.newspaper import edition
     cid = do_import(con, "c.txt", data=_export("2026-10-20"), date_order="MDY")["chat_id"]
     # Sin ediciones: 7 días que terminan el día anterior al último con mensajes (ese está a medias).
     assert newspaper.continue_range(con, cid) == ("2026-10-13", "2026-10-19")
@@ -580,7 +580,7 @@ def test_continue_needs_the_minimum_of_articles(no_network, setenv, tmp_path, co
 def test_articles_over_the_cap_go_to_the_list_of_other_links(no_network, setenv, con):
     from conftest import do_import
 
-    from community_lens import edition
+    from community_lens.newspaper import edition
     setenv(ANTHROPIC_API_KEY="k-demo")
     _, models = no_network
     cid = do_import(con, "c.txt", data=_export("2026-10-07"), date_order="MDY")["chat_id"]
@@ -802,8 +802,9 @@ def test_old_database_gains_the_columns_and_its_editions_stay_published(tmp_path
 
     from conftest import FIX, do_import
 
-    from community_lens import db, edition
+    from community_lens import db
     from community_lens.config import settings
+    from community_lens.newspaper import edition
     raw = sqlite3.connect(settings().db_path)
     raw.execute(OLD_EDITIONS)
     if cut:
@@ -887,8 +888,9 @@ def test_a_draft_is_not_published_and_its_page_says_so(client, tmp_path):
 
 
 def test_published_bytes_are_the_approved_ones_and_damage_is_reported(client, tmp_path, monkeypatch, capsys):
-    from community_lens import cli, newspaper_html
+    from community_lens import cli
     from community_lens.db import connect
+    from community_lens.newspaper import template
     c, cid = client
     con = connect()
     site_dir = tmp_path / "sitio"
@@ -897,7 +899,7 @@ def test_published_bytes_are_the_approved_ones_and_damage_is_reported(client, tm
     assert c.post(f"/api/newspaper/editions/{a}/approve", json=APPROVE).status_code == 200
     approved = con.execute("SELECT approved_html FROM editions WHERE id=?", (a,)).fetchone()[0]
     # Plantilla nueva: el sitio sigue publicando los bytes aprobados y la lista avisa que reaprobar los actualiza.
-    monkeypatch.setattr(newspaper_html, "CSS", newspaper_html.CSS + "\n.fp-nueva{color:red}")
+    monkeypatch.setattr(template, "CSS", template.CSS + "\n.fp-nueva{color:red}")
     assert newspaper.publish(con, cid, site_dir)["skipped"] == []
     assert page_file.read_bytes() == approved and b"fp-nueva" not in approved
     assert "fp-nueva" in c.get(f"/periodico/{a}").text  # la página de la app se dibuja con la plantilla de hoy
@@ -946,8 +948,8 @@ def test_published_bytes_are_the_approved_ones_and_damage_is_reported(client, tm
 def test_approval_is_recorded_and_validated(client):
     from datetime import UTC, datetime, timedelta
 
-    from community_lens import edition
     from community_lens.db import connect
+    from community_lens.newspaper import edition
     c, cid = client
     eid = _generate(c, cid)
     for body in ({"by": "", "via": "WhatsApp"}, {"by": "   ", "via": "WhatsApp"}, {"by": "Jaime", "via": ""}, {"by": "Jaime", "via": "\n\t"},
@@ -1006,7 +1008,7 @@ def test_discard_hides_and_restore_brings_back_a_draft(client, tmp_path):
 def test_pending_draft_names_the_newest_and_counts_them(con):
     from conftest import do_import
 
-    from community_lens import edition
+    from community_lens.newspaper import edition
     assert issubclass(newspaper.DraftPending, newspaper.NewspaperError) and not issubclass(newspaper.DraftPending, newspaper.NoNews)
     cid = do_import(con, "c.txt", data=_export("2026-10-20"), date_order="MDY")["chat_id"]
     assert newspaper.pending_draft(con, cid) is None
@@ -1205,7 +1207,7 @@ def test_draft_preview_and_listing(no_network, setenv, tmp_path, con, capsys):
 
 
 def test_damaged_approved_edition_is_an_error_in_json(no_network, setenv, tmp_path, con, capsys):
-    from community_lens import edition
+    from community_lens.newspaper import edition
     setenv(ANTHROPIC_API_KEY="k-demo")
     site = tmp_path / "sitio"
     assert _run(tmp_path, "2026-10-08", *APPROVE_NOW, "--salida", str(site)) == 0
@@ -1262,14 +1264,14 @@ def _site_pages(site_dir) -> dict[str, str]:
 def _freeze_old_approval(con, eid, page: bytes, **extra) -> None:
     """Deja una aprobada como la dejaba la app antes de la versión pública: bytes dados, hash correcto y, salvo que
     extra diga otra cosa, un registro sin "public"."""
-    from community_lens import edition
+    from community_lens.newspaper import edition
     approval = {"hash": edition.page_hash(page), "by": "Jaime", "via": "WhatsApp", "at": "2026-10-10T18:00:00Z", "to": None, **extra}
     con.execute("UPDATE editions SET status='aprobada', approval=?, approved_html=? WHERE id=?", (json.dumps(approval), page, eid))
 
 
 def test_the_site_carries_nothing_from_the_conversation(sentinel, tmp_path):
-    from community_lens import edition, newspaper_html
     from community_lens.db import connect
+    from community_lens.newspaper import edition, template
     c, cid = sentinel
     con = connect()
     eid = _with_readings(c, cid)
@@ -1293,20 +1295,20 @@ def test_the_site_carries_nothing_from_the_conversation(sentinel, tmp_path):
     # Lo que se aprobó y se hasheó es la versión pública, y es lo que se escribió.
     stored = con.execute("SELECT approval, approved_html FROM editions WHERE id=?", (eid,)).fetchone()
     written = (tmp_path / "sitio" / site["files"][1]).read_bytes()
-    assert written == stored["approved_html"] == newspaper_html.render(ed, public=True).encode()
+    assert written == stored["approved_html"] == template.render(ed, public=True).encode()
     assert json.loads(stored["approval"])["hash"] == edition.page_hash(written) and json.loads(stored["approval"])["public"] is True
     con.close()
 
 
 def test_the_screen_shows_everything_and_publico_shows_what_is_published(sentinel):
-    from community_lens import edition, newspaper_html
     from community_lens.db import connect
+    from community_lens.newspaper import edition, template
     c, cid = sentinel
     eid = _with_readings(c, cid)
     url = f"/periodico/{eid}"
     full = c.get(url).text
     assert all(x in full for x in (SECRET, GROUP, "En números", "Los enlaces y las cifras salen del chat exportado."))
-    assert newspaper_html.READINGS_MARKER.decode() in full  # el marcador es exactamente lo que dibuja la plantilla
+    assert template.READINGS_MARKER.decode() in full  # el marcador es exactamente lo que dibuja la plantilla
     public = c.get(url, params={"publico": 1}).text
     assert not any(leak in public for leak in LEAKS) and "Compartido" in public
     assert _filename(c.get(url, params={"publico": 1, "download": "true"})) == "borrador_publico_2026-10-01_a_2026-10-03.html"  # es borrador
@@ -1324,14 +1326,14 @@ def test_the_screen_shows_everything_and_publico_shows_what_is_published(sentine
     con = connect()
     ed = edition.load(con, eid) | {"timeline": []}
     con.close()
-    solo = newspaper_html.render(ed, public=True)
+    solo = template.render(ed, public=True)
     assert '<section class="fp-lead-grid fp-solo" id="articulos">' in solo and "<aside" not in solo and ".fp-lead-grid.fp-solo{" in solo
-    assert '<section class="fp-lead-grid" id="articulos">' in newspaper_html.render(ed) and "En números" in newspaper_html.render(ed)
+    assert '<section class="fp-lead-grid" id="articulos">' in template.render(ed) and "En números" in template.render(ed)
 
 
 def test_inherited_edition_with_readings_is_published_without_them(sentinel, tmp_path):
-    from community_lens import edition
     from community_lens.db import connect
+    from community_lens.newspaper import edition
     c, cid = sentinel
     con = connect()
     data = edition.load(con, _with_readings(c, cid)) | {"from": "2026-09-01", "to": "2026-09-07"}
@@ -1347,13 +1349,13 @@ def test_inherited_edition_with_readings_is_published_without_them(sentinel, tmp
 
 
 def test_approved_before_the_public_version_with_readings_waits_for_reapproval(sentinel, tmp_path, capsys):
-    from community_lens import edition, newspaper_html
     from community_lens.db import connect
+    from community_lens.newspaper import edition, template
     c, cid = sentinel
     con = connect()
     site_dir = tmp_path / "sitio"
     eid = _with_readings(c, cid)
-    _freeze_old_approval(con, eid, newspaper_html.render(edition.load(con, eid)).encode())
+    _freeze_old_approval(con, eid, template.render(edition.load(con, eid)).encode())
     row = _row(c, cid, eid)
     assert (row["approval"]["public"], row["hash_ok"], row["leaks_readings"], row["in_site"]) == (False, True, True, False)
     assert newspaper.publish(con, cid, site_dir)["skipped"] == [{"id": eid, "from": "2026-10-01", "to": "2026-10-03", "reason": OLD_PUBLIC}]
@@ -1372,12 +1374,12 @@ def test_approved_before_the_public_version_with_readings_waits_for_reapproval(s
 
 
 def test_approved_before_the_public_version_without_readings_and_the_second_defense(sentinel, tmp_path):
-    from community_lens import edition, newspaper_html
     from community_lens.db import connect
+    from community_lens.newspaper import edition, template
     c, cid = sentinel
     con = connect()
     plain = _generate(c, cid)
-    _freeze_old_approval(con, plain, newspaper_html.render(edition.load(con, plain)).encode())
+    _freeze_old_approval(con, plain, template.render(edition.load(con, plain)).encode())
     row = _row(c, cid, plain)
     assert (row["approval"]["public"], row["hash_ok"], row["leaks_readings"], row["blocked_reason"], row["in_site"]) == (False, True, False, OLD_PUBLIC, False)
     assert [s["reason"] for s in newspaper.publish(con, cid, tmp_path / "sitio")["skipped"]] == [OLD_PUBLIC]
@@ -1386,7 +1388,7 @@ def test_approved_before_the_public_version_without_readings_and_the_second_defe
     # Segunda defensa: aunque el registro diga public, bytes con lecturas no entran (otro rango, para no taparla).
     leaky = _generate(c, cid, "2026-10-02", "2026-10-03")
     data = edition.load(con, _with_readings(c, cid))
-    _freeze_old_approval(con, leaky, newspaper_html.render(data).encode(), public=True)
+    _freeze_old_approval(con, leaky, template.render(data).encode(), public=True)
     row = _row(c, cid, leaky)
     assert (row["approval"]["public"], row["hash_ok"], row["leaks_readings"], row["blocked_reason"], row["in_site"]) == (True, True, True, OLD_READINGS, False)
     site = newspaper.publish(con, cid, tmp_path / "sitio")
@@ -1394,7 +1396,7 @@ def test_approved_before_the_public_version_without_readings_and_the_second_defe
     assert edition.blocked_reason(con.execute("SELECT * FROM editions WHERE id=?", (leaky,)).fetchone()) == OLD_READINGS
     # "public" tiene que ser el booleano true: el texto "true" (cambiado por SQL) no la abre, y queda fuera igual.
     stringy = _generate(c, cid, "2026-10-01", "2026-10-02")
-    _freeze_old_approval(con, stringy, newspaper_html.render(data).encode(), public="true")
+    _freeze_old_approval(con, stringy, template.render(data).encode(), public="true")
     row = _row(c, cid, stringy)
     assert (row["approval"]["public"], row["hash_ok"], row["leaks_readings"], row["blocked_reason"], row["in_site"]) == (False, True, True, OLD_PUBLIC, False)
     site = newspaper.publish(con, cid, tmp_path / "sitio")
@@ -1417,14 +1419,15 @@ def test_draft_file_is_the_public_version_with_the_band(sentinel, tmp_path, caps
 
 
 def test_listing_says_why_an_approved_edition_waits_for_reapproval(sentinel, capsys):
-    from community_lens import cli, edition, newspaper_html
+    from community_lens import cli
     from community_lens.db import connect
+    from community_lens.newspaper import edition, template
     c, cid = sentinel
     con = connect()
     old = _generate(c, cid)
-    _freeze_old_approval(con, old, newspaper_html.render(edition.load(con, old)).encode())  # sin "public"
+    _freeze_old_approval(con, old, template.render(edition.load(con, old)).encode())  # sin "public"
     leaky = _generate(c, cid, "2026-10-02", "2026-10-03")
-    _freeze_old_approval(con, leaky, newspaper_html.render(edition.load(con, _with_readings(c, cid))).encode(), public=True)
+    _freeze_old_approval(con, leaky, template.render(edition.load(con, _with_readings(c, cid))).encode(), public=True)
     con.close()
     capsys.readouterr()
     assert cli.periodico(["--grupo-id", str(cid), "--listar"]) == 0
@@ -1460,8 +1463,8 @@ def test_the_public_name_heads_the_title_and_the_index(sentinel, setenv, tmp_pat
 
 
 def test_social_posts_carry_their_logo_and_empty_ones_go_to_a_footer_line():
-    from community_lens import edition, newspaper_html
-    from community_lens.brand_icons import DRAWN, LOGOS
+    from community_lens.newspaper import edition, template
+    from community_lens.newspaper.brand_icons import DRAWN, LOGOS
     ed = edition.upgrade(json.loads((__import__("conftest").FIX / "edition_v1.json").read_text(encoding="utf-8"))["data"])
     base = {"account": "", "text": "La plataforma no entregó contenido público de esta publicación.", "shared": "2026-10-02",
             "video": False, "preview": False}
@@ -1469,7 +1472,7 @@ def test_social_posts_carry_their_logo_and_empty_ones_go_to_a_footer_line():
                      {**base, "platform": "Facebook", "url": "https://www.facebook.com/share/p/xyz/"},
                      {**base, "platform": "LinkedIn", "url": "https://www.linkedin.com/posts/x"}]
     for public in (False, True):
-        page = newspaper_html.render(ed, public=public)
+        page = template.render(ed, public=public)
         body = page.split("</style>")[1]
         cards, also = body.split('<p class="fp-also">')
         # Con contenido: tarjeta con el logo de la red en la etiqueta, y sin línea de cuenta si no se conoce.
@@ -1483,7 +1486,7 @@ def test_social_posts_carry_their_logo_and_empty_ones_go_to_a_footer_line():
         assert "style=" not in body
     # Si ninguna entregó nada, no queda una fila vacía.
     ed["socials"], ed["tools"] = ed["socials"][1:], []
-    assert '<div class="fp-row">' not in newspaper_html.render(ed) and "También se compartió:" in newspaper_html.render(ed)
+    assert '<div class="fp-row">' not in template.render(ed) and "También se compartió:" in template.render(ed)
 
 def test_the_most_shared_article_leads_unless_there_is_a_tie():
     arts = [{"id": 1}, {"id": 2}, {"id": 3}]
@@ -1538,8 +1541,8 @@ def test_the_page_title_ignores_the_titles_inside_icons():
 
 
 def test_other_links_section_folds_long_groups_marks_old_notes_and_escapes():
-    from community_lens import edition, newspaper_html
-    from community_lens.brand_icons import DRAWN, LOGOS
+    from community_lens.newspaper import edition, template
+    from community_lens.newspaper.brand_icons import DRAWN, LOGOS
     v1 = json.loads((__import__("conftest").FIX / "edition_v1.json").read_text(encoding="utf-8"))["data"]
     for older in (2, 3):                                               # las de formato 2 y 3 se abren
         old = edition.upgrade(v1) | {"format": older}
@@ -1562,7 +1565,7 @@ def test_other_links_section_folds_long_groups_marks_old_notes_and_escapes():
         {**link, "kind": "social", "url": "https://www.linkedin.com/posts/x", "domain": "linkedin.com", "platform": "LinkedIn"},
         {**link, "kind": "tool", "url": "https://h.example/", "domain": "h.example"}]
     for public in (False, True):
-        page = newspaper_html.render(ed, public=public).split("</style>")[1]
+        page = template.render(ed, public=public).split("</style>")[1]
         section = page.split('id="otros">')[1]
         assert section.index("<span>Artículos</span>") < section.index("<span>Redes sociales</span>") < section.index("<span>Sitios</span>")
         head, folded = section.split('<details class="fp-ol-more">')[:2]
@@ -1575,28 +1578,28 @@ def test_other_links_section_folds_long_groups_marks_old_notes_and_escapes():
         assert 'fp-ol-dim" href="https://h.example/" target="_blank" rel="noopener noreferrer">h.example</a>' in section
         assert "style=" not in page
     # Lo que no se pudo leer: en la versión pública va a la lista con su dominio; el motivo queda en la completa.
-    full, pub = newspaper_html.render(ed), newspaper_html.render(ed, public=True)
+    full, pub = template.render(ed), template.render(ed, public=True)
     assert "No se pudo leer" in full and "HTTP 404" in full and "No se pudo leer" not in pub and "HTTP 404" not in pub
     assert 'href="https://caido.example.org/nota/rota"' in pub.split('id="otros">')[1] and 'href="#otros">🔗 12 enlaces más' in pub
     assert "<span>Enlaces del" in pub and "<span>Datos del" in full
 
 
 def test_a_site_without_preview_goes_to_the_footer_line_not_to_a_card():
-    from community_lens import edition, newspaper_html
+    from community_lens.newspaper import edition, template
     ed = edition.upgrade(json.loads((__import__("conftest").FIX / "edition_v1.json").read_text(encoding="utf-8"))["data"])
     ed["tools"] = [{"url": "https://vacio.example/", "shared": "2026-10-03", "name": "vacio.example", "text": "El sitio no entregó texto legible.",
                     "preview": False}]
-    page = newspaper_html.render(ed, public=True).split("</style>")[1]
+    page = template.render(ed, public=True).split("</style>")[1]
     assert "fp-card-tool" not in page and "El sitio no entregó" not in page and 'href="#sitios"' not in page
     assert "vacio.example · 3 oct" in page.split('<p class="fp-also">')[1]
 
 
 def test_editions_saved_with_tracking_parameters_are_shown_without_them():
-    from community_lens import edition, newspaper_html
+    from community_lens.newspaper import edition, template
     ed = edition.upgrade(json.loads((__import__("conftest").FIX / "edition_v1.json").read_text(encoding="utf-8"))["data"])
     ed["socials"][0]["url"] = "https://youtu.be/abc123?si=QuienComparte"
     ed["others"] = [{"kind": "social", "url": "https://www.instagram.com/p/z/?igsh=QuienComparte", "shared": "2026-10-02",
                      "domain": "instagram.com", "platform": "Instagram", "title": None, "published": None, "caption": None, "account": None}]
     for public in (False, True):
-        page = newspaper_html.render(ed, public=public)
+        page = template.render(ed, public=public)
         assert "QuienComparte" not in page and 'href="https://youtu.be/abc123"' in page and 'href="https://www.instagram.com/p/z/"' in page

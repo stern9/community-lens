@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS pages (
     fetched_at  TEXT NOT NULL
 );
 
--- Ediciones del periódico. data = contenido estructurado (su forma está en edition.py); la página se dibuja
+-- Ediciones del periódico. data = contenido estructurado (su forma está en newspaper/edition.py); la página se dibuja
 -- desde data cada vez que se abre, y al aprobarla se guardan los bytes que se publican. html quedó de una versión
 -- anterior: no se lee y las ediciones nuevas la dejan vacía (no se elimina para no tocar bases existentes).
 -- status, approval y approved_html se agregaron después: en una base vieja los agrega connect() (EDITION_COLUMNS).

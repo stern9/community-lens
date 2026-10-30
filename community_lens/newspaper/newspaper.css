@@ -145,5 +145,5 @@ html{scroll-behavior:smooth;}
 @media (max-width:760px){.fp-views-row.fp-n3{grid-template-columns:1fr;}}
 .fp-index{margin-top:22px;}
 .fp-index .fp-art:first-child h3{font-size:26px;line-height:1.15;}
-/* Banda de las ediciones que todavía no se aprobaron (newspaper_html.render con draft): nunca llega al sitio publicado. */
+/* Banda de las ediciones que todavía no se aprobaron (template.render con draft): nunca llega al sitio publicado. */
 .fp-draft{position:sticky;top:0;background:var(--accent);color:var(--paper);text-align:center;font-family:Helvetica,Arial,sans-serif;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:8px;margin:0 0 12px}

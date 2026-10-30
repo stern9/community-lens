@@ -14,9 +14,11 @@ community_lens/
   classify/      Proveedores de clasificación: rules (local), jev (opcional), openai_decisions (reservado).
     labels.py    Ejecución vigente, categoría efectiva y correcciones humanas: la única definición.
   report.py      Reporte agregado HTML / texto.
-  newspaper.py   Periódico: reglas de una edición, selección de enlaces, lectura de páginas, seudonimización, armado.
-  edition.py     Qué es una edición guardada: campos, número de formato y conversión de formas anteriores.
-  newspaper_html.py + newspaper.css   Plantilla fija del periódico (HTML autocontenido).
+  newspaper/     Periódico.
+    __init__.py  Reglas de una edición, selección de enlaces, lectura de páginas, seudonimización, armado y sitio.
+    edition.py   Qué es una edición guardada: campos, número de formato, conversión de formas anteriores y estados.
+    template.py + newspaper.css   Plantilla fija del periódico (HTML autocontenido).
+    brand_icons.py   Logos de las redes sociales (Simple Icons) que dibuja la plantilla.
   dates.py       Fechas en español para el periódico y el reporte.
   llm.py         Modelos de lenguaje sin atarse a un proveedor (Claude, OpenAI o compatible, Gemini).
   cli.py         Periódico desde la terminal: importar, generar y publicar el sitio estático.

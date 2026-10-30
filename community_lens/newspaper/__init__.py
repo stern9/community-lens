@@ -24,7 +24,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import SplitResult, quote, urljoin, urlsplit
 
-from . import edition, llm, newspaper_html, resources
+from .. import llm, resources
+from . import edition, template
 
 SOCIAL = {"x.com": "X", "twitter.com": "X", "youtube.com": "YouTube", "youtu.be": "YouTube", "tiktok.com": "TikTok",
           "instagram.com": "Instagram", "linkedin.com": "LinkedIn", "lnkd.in": "LinkedIn", "facebook.com": "Facebook",
@@ -814,7 +815,7 @@ def edition_html(con, edition_id: int, draft: bool | None = None, public: bool =
     row, ed = found
     band = row["status"] in ("borrador", "descartada") if draft is None else draft
     prefix = "_".join(["borrador"] * band + ["publico"] * public) or "periodico"
-    return newspaper_html.render(ed, draft=band, public=public), f"{prefix}_{ed['from']}_a_{ed['to']}"
+    return template.render(ed, draft=band, public=public), f"{prefix}_{ed['from']}_a_{ed['to']}"
 
 
 SITE_PAGE = re.compile(r"\d{4}-\d{2}-\d{2}_a_\d{4}-\d{2}-\d{2}\.html")  # lo único que publish() borra de ediciones/
@@ -845,12 +846,12 @@ def publish(con, chat_id: int, out_dir) -> dict:
         if r["status"] == "aprobada":
             (out / name).write_bytes(edition.approved_bytes(r))
         else:
-            (out / name).write_text(newspaper_html.render(ed, public=True), encoding="utf-8")
+            (out / name).write_text(template.render(ed, public=True), encoding="utf-8")
         written.append(name)
         entries.append({"href": name, "range_label": ed["range_label"], "year": ed["to"][:4], "thread": ed["thread"],
                         "headline": ed["lead"]["headline"], "articles": 1 + len(ed["articles"])})
     for f in (out / "ediciones").iterdir():
         if SITE_PAGE.fullmatch(f.name) and f"ediciones/{f.name}" not in written and f.is_file():
             f.unlink()
-    (out / "index.html").write_text(newspaper_html.render_index(entries), encoding="utf-8")
+    (out / "index.html").write_text(template.render_index(entries), encoding="utf-8")
     return {"files": ["index.html"] + written, "skipped": skipped}

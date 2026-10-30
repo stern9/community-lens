@@ -10,10 +10,11 @@ from conftest import BASE_URL, FIX, FakeLLM, FakeNet, api_client, fixture_bytes
 from fastapi.routing import APIRoute
 from starlette.routing import Mount
 
-from community_lens import edition, llm, newspaper
+from community_lens import llm, newspaper
 from community_lens.api import app
 from community_lens.config import settings
 from community_lens.db import connect
+from community_lens.newspaper import edition
 
 OWN = BASE_URL.removeprefix("http://")          # 127.0.0.1:8765
 EVIL = "evil.example"

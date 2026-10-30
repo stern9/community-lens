@@ -3,7 +3,7 @@
 Todo texto (del modelo o de las páginas) entra escapado; las direcciones salen de la base, no del modelo.
 Recibe una edición con la forma actual (edition.Edition): las guardadas con una forma anterior ya pasaron
 por edition.upgrade(), así que acá no hay valores por defecto. De edition.py toma solo los tipos (sin importarlo al
-correr), porque edition.py dibuja con render() al aprobar una edición.
+correr), porque edition.py dibuja con template.render() al aprobar una edición.
 """
 from __future__ import annotations
 
@@ -12,10 +12,10 @@ from html import escape as e
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..config import settings
+from ..dates import fmt_day, short_day
+from ..resources import clean_url
 from .brand_icons import DRAWN, LOGOS
-from .config import settings
-from .dates import fmt_day, short_day
-from .resources import clean_url
 
 if TYPE_CHECKING:
     from .edition import Article, Edition, Reading
