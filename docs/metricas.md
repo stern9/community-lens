@@ -40,6 +40,14 @@ Son estimaciones (con las correcciones humanas aplicadas), no conteos oficiales.
   clasificada.
 - Un mensaje puede tener varias categorías, así que los conteos por categoría no suman el total.
 
+## Stickers
+
+Que un mensaje fue un sticker lo dice cualquier exportación; cuál fue, solo un `.zip` exportado con archivos. Por eso
+la pestaña informa tres cifras: stickers del período, cuántos tienen imagen y cuántas imágenes distintas hay. El
+ranking cuenta solo los que tienen imagen, y dos envíos son el mismo sticker si la imagen es idéntica byte a byte
+(SHA-256), aunque el archivo se llame distinto. "Quiénes mandan más stickers" cuenta todos, con o sin imagen.
+Un sticker con otra resolución o recomprimido cuenta como otro.
+
 ## Enlaces
 
 Las "compartidas" de un enlace son los mensajes distintos que lo incluyen. Qué cuenta como "el mismo enlace" (la

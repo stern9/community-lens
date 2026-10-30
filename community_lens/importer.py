@@ -80,7 +80,7 @@ MAX_TXT_BYTES = 300_000_000
 
 def unzip_chat(data: bytes, file_name: str) -> tuple[bytes, str]:
     """Si `data` es el .zip que exporta WhatsApp, devuelve el TXT de adentro; si no, lo deja igual.
-    Solo se abre la entrada de texto: fotos, audios y demás adjuntos se ignoran."""
+    Solo se abre la entrada de texto: los stickers los lee aparte zip_stickers y el resto de los adjuntos se ignora."""
     if not data.startswith(b"PK"):
         return data, file_name
     import io
@@ -98,6 +98,42 @@ def unzip_chat(data: bytes, file_name: str) -> tuple[bytes, str]:
             return z.read(entry), (file_name.rsplit(".", 1)[0] + ".txt") if inner == "_chat.txt" else inner
     except zipfile.BadZipFile:
         raise ImportError_("bad_zip", "El archivo parece un .zip pero no se pudo abrir.") from None
+
+
+MAX_STICKER_BYTES = 2 * 1024 * 1024
+MAX_STICKERS_TOTAL = 500 * 1024 * 1024
+
+
+def is_webp(data: bytes) -> bool:
+    return len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+
+
+def zip_stickers(data: bytes) -> dict[str, bytes]:
+    """{nombre de archivo: bytes} de los stickers de un .zip exportado "con archivos"; vacío si no es un .zip.
+    Solo entran archivos con nombre de sticker que de verdad son .webp, cada uno de hasta 2 MB; las demás
+    fotos, audios y documentos no se abren."""
+    if not data.startswith(b"PK"):
+        return {}
+    import io
+    import zipfile
+    out: dict[str, bytes] = {}
+    total = 0
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            for i in z.infolist():
+                name = i.filename.rsplit("/", 1)[-1]
+                if i.is_dir() or not P.is_sticker_file(name) or i.file_size > MAX_STICKER_BYTES:
+                    continue
+                with z.open(i) as f:
+                    blob = f.read(MAX_STICKER_BYTES + 1)  # el tamaño declarado en el .zip no se da por bueno
+                total += len(blob)
+                if total > MAX_STICKERS_TOTAL:
+                    raise ImportError_("zip_too_large", "Los stickers dentro del .zip suman demasiado.")
+                if len(blob) <= MAX_STICKER_BYTES and is_webp(blob):
+                    out[name] = blob
+    except zipfile.BadZipFile:
+        raise ImportError_("bad_zip", "El archivo parece un .zip pero no se pudo abrir.") from None
+    return out
 
 
 def suggest_name(file_name: str) -> str:
@@ -140,8 +176,31 @@ def staged_bytes(sha: str) -> bytes:
     return f.read_bytes()
 
 
+def stage_stickers(sha: str, stickers: dict[str, bytes]) -> None:
+    """Guarda junto al TXT los stickers del mismo .zip, para que la confirmación los encuentre. Sin stickers no queda
+    archivo: una vista previa del mismo TXT sin archivos no hereda los de una anterior."""
+    import zipfile
+    f = settings().staging_dir / f"{sha}.stickers.zip"
+    if not stickers:
+        f.unlink(missing_ok=True)
+        return
+    with zipfile.ZipFile(f, "w", zipfile.ZIP_STORED) as z:
+        for name, blob in stickers.items():
+            z.writestr(name, blob)
+
+
+def staged_stickers(sha: str) -> dict[str, bytes]:
+    import zipfile
+    f = settings().staging_dir / f"{sha}.stickers.zip"
+    if not f.exists():
+        return {}
+    with zipfile.ZipFile(f) as z:
+        return {i.filename: z.read(i) for i in z.infolist()}
+
+
 def unstage(sha: str) -> None:
     (settings().staging_dir / f"{sha}.txt").unlink(missing_ok=True)
+    (settings().staging_dir / f"{sha}.stickers.zip").unlink(missing_ok=True)
 
 
 def clear_staging(older_than_seconds: float = 0) -> None:
@@ -149,7 +208,7 @@ def clear_staging(older_than_seconds: float = 0) -> None:
     d = settings().staging_dir
     if d.exists():
         limit = time.time() - older_than_seconds
-        for f in d.glob("*.txt"):
+        for f in [*d.glob("*.txt"), *d.glob("*.stickers.zip")]:
             if f.stat().st_mtime <= limit:
                 f.unlink(missing_ok=True)
 
@@ -220,11 +279,14 @@ def _overlap(con, chat_id: int, recs, tz, has_seconds: bool) -> dict:
             "ratio": round(matched / new_in, 4) if new_in else None}
 
 
-def preview(con, data: bytes, file_name: str, tz_name: str | None, date_order: str | None) -> dict:
+def preview(con, data: bytes, file_name: str, tz_name: str | None, date_order: str | None,
+            stickers: dict[str, bytes] | None = None) -> dict:
+    """`stickers`: los que zip_stickers sacó del mismo .zip; quedan en staging hasta confirmar."""
     tz_name = tz_name or settings().default_tz
     tz = get_tz(tz_name)
     clear_staging(older_than_seconds=3600)
     sha = stage(data)
+    stage_stickers(sha, stickers or {})
     text, dec_warn = decode(data)
     raws, _issues, _ = P.scan(text)
     if not raws:
@@ -238,6 +300,7 @@ def preview(con, data: bytes, file_name: str, tz_name: str | None, date_order: s
         "date_detection": det, "date_order": order,
         "date_order_source": "user" if date_order else ("detected" if det["order"] else None),
         "needs_date_order": order is None, "diagnostics": None, "candidates": [], "recommendation": None,
+        "stickers_in_file": 0,
     }
     if date_order and det["order"] and date_order != det["order"]:
         out["date_order_warning"] = (
@@ -253,6 +316,7 @@ def preview(con, data: bytes, file_name: str, tz_name: str | None, date_order: s
     out["diagnostics"] = diag
 
     recs = parsed["records"]
+    out["stickers_in_file"] = sum(1 for r in recs if r.attachment in (stickers or {}))
     sugg = out["suggested_name"].casefold()
     best = None
     for c in con.execute("SELECT id, name FROM chats ORDER BY id"):
@@ -316,10 +380,22 @@ def commit(con, token: str, file_name: str, *, chat_id: int | None, chat_name: s
     other = con.execute(
         "SELECT i.id, i.chat_id, c.name FROM imports i JOIN chats c ON c.id=i.chat_id "
         "WHERE i.file_sha256=? AND (? IS NULL OR i.chat_id=?) ORDER BY i.id", (token, chat_id, chat_id)).fetchone()
+    stickers = staged_stickers(token)
     if other:
+        # El mismo TXT ya está, pero puede venir ahora en el .zip "con archivos": sus stickers sí se agregan.
+        added = 0
+        if stickers:
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                added = _attach_stickers(con, other["id"], recs, stickers)
+                con.execute("COMMIT")
+            except Exception:
+                con.execute("ROLLBACK")
+                raise
         unstage(token)
-        return {"status": "duplicate", "chat_id": other["chat_id"], "import_id": other["id"],
-                "message": f"Este archivo ya estaba importado en «{other['name']}». No se modificó nada."}
+        return {"status": "duplicate", "chat_id": other["chat_id"], "import_id": other["id"], "stickers_added": added,
+                "message": f"Este archivo ya estaba importado en «{other['name']}». " +
+                           (f"Se agregaron las imágenes de {added} stickers; los mensajes no cambiaron." if added else "No se modificó nada.")}
 
     try:
         con.execute("BEGIN IMMEDIATE")
@@ -442,6 +518,7 @@ def commit(con, token: str, file_name: str, *, chat_id: int | None, chat_name: s
         final = [e["id"] for e in existing[:i0]] + merged + [e["id"] for e in existing[i1:]]
         con.executemany("UPDATE messages SET seq=? WHERE id=?", [(n, mid) for n, mid in enumerate(final)])
         con.execute("UPDATE imports SET reconciliation=? WHERE id=?", (json.dumps(summary), import_id))
+        stickers_added = _attach_stickers(con, import_id, recs, stickers)
         con.execute("COMMIT")
     except Exception:
         if con.in_transaction:
@@ -449,7 +526,29 @@ def commit(con, token: str, file_name: str, *, chat_id: int | None, chat_name: s
         raise
     unstage(token)
     return {"status": "imported", "chat_id": chat_id, "import_id": import_id,
-            "diagnostics": diag, "reconciliation": summary}
+            "diagnostics": diag, "reconciliation": summary, "stickers_added": stickers_added}
+
+
+def _attach_stickers(con, import_id: int, recs, stickers: dict[str, bytes]) -> int:
+    """Asocia cada mensaje con el sticker que trae el .zip, buscándolo por la línea donde lo registró `import_id`.
+    Vale igual para un mensaje recién insertado que para uno que ya estaba (por ejemplo, de una exportación sin
+    archivos del mismo grupo). Devuelve cuántos mensajes quedaron con imagen por primera vez."""
+    if not stickers:
+        return 0
+    by_line = {r["line_start"]: r["message_id"] for r in con.execute(
+        "SELECT message_id, line_start FROM message_sources WHERE import_id=?", (import_id,))}
+    added = 0
+    for r in recs:
+        mid = by_line.get(r.line_start)
+        blob = stickers.get(r.attachment) if r.attachment else None
+        if mid is None or blob is None:
+            continue
+        sha = hashlib.sha256(blob).hexdigest()
+        con.execute("INSERT OR IGNORE INTO sticker_images(sha256, bytes, file_bytes) VALUES (?,?,?)", (sha, blob, len(blob)))
+        added += con.execute("INSERT OR IGNORE INTO message_stickers(message_id, sha256) VALUES (?,?)", (mid, sha)).rowcount
+        # Una importación anterior con archivos lo había guardado como adjunto genérico.
+        con.execute("UPDATE messages SET media_kind='sticker' WHERE id=? AND media_kind='attachment'", (mid,))
+    return added
 
 
 # ------------------------------------------------------------ mantenimiento --
@@ -478,7 +577,8 @@ def retime_chat(con, chat_id: int, tz_name: str, reinterpret_imports: bool) -> N
 
 def delete_chat(con, chat_id: int) -> dict:
     """Elimina el chat y todo lo derivado (mensajes, índice, enlaces, clasificaciones, correcciones,
-    ediciones del periódico y el texto de las páginas que se leyeron para ellas)."""
+    ediciones del periódico, el texto de las páginas que se leyeron para ellas y las imágenes de stickers que
+    ningún otro grupo usa)."""
     n = con.execute("SELECT COUNT(*) c FROM messages WHERE chat_id=?", (chat_id,)).fetchone()["c"]
     con.execute("BEGIN IMMEDIATE")
     try:
@@ -489,6 +589,8 @@ def delete_chat(con, chat_id: int) -> dict:
         kept = {link_key(r["url"]) for r in con.execute("SELECT DISTINCT url FROM links")}
         con.executemany("DELETE FROM pages WHERE url=?",
                         [(r["url"],) for r in con.execute("SELECT url FROM pages").fetchall() if link_key(r["url"]) not in kept])
+        # Igual con los stickers: una imagen puede estar en varios grupos y solo se borra cuando ya no queda en ninguno.
+        con.execute("DELETE FROM sticker_images WHERE sha256 NOT IN (SELECT sha256 FROM message_stickers)")
         con.execute("COMMIT")
     except Exception:
         con.execute("ROLLBACK")

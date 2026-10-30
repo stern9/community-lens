@@ -12,10 +12,11 @@ import { viewPeriodico } from "./views/periodico.js";
 import { viewRecursos } from "./views/recursos.js";
 import { viewReporte } from "./views/reporte.js";
 import { viewResumen } from "./views/resumen.js";
+import { viewStickers } from "./views/stickers.js";
 
 /** Una entrada por pestaña de index.html (atributo data-tab). */
 const VIEWS = {
-  resumen: viewResumen, explorar: viewExplorar, recursos: viewRecursos, categorias: viewCategorias,
+  resumen: viewResumen, explorar: viewExplorar, recursos: viewRecursos, stickers: viewStickers, categorias: viewCategorias,
   importar: viewImportar, reporte: viewReporte, periodico: viewPeriodico,
 } as const satisfies Readonly<Record<string, View>>;
 type Tab = keyof typeof VIEWS;

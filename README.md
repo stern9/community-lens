@@ -43,7 +43,7 @@ los archivos:
 
 - **Sin archivos** (recomendado): un texto liviano, donde cada foto o audio figura como «imagen omitida».
 - **Con archivos**: el mismo texto junto con las fotos, audios y documentos (normalmente en un `.zip`). La app
-  solo lee el texto; los adjuntos se ignoran.
+  lee el texto y, de los adjuntos, solo los stickers (para la pestaña *Stickers*); el resto se ignora.
 
 Las dos formas se pueden importar en el mismo grupo: un mensaje con adjunto se reconoce como el mismo en ambas.
 
@@ -54,6 +54,7 @@ Las dos formas se pueden importar en el mismo grupo: un mensaje con adjunto se r
    grupo solo agrega lo que falta.
 2. **Resumen** → métricas con su denominador, actividad por mes y por día, autores y dominios.
 3. **Recursos** → buscá un documento por nombre: última versión, anteriores, quién lo compartió y dónde.
+   **Stickers** → los más mandados, con su imagen y quién los manda (hace falta el `.zip` con archivos).
 4. **Explorar** → buscá un término, filtrá por autor o categoría, abrí *Ver contexto* y probá *Copiar referencia*.
 5. **Categorías** → ejecutá *Clasificar con reglas*, entrá a una categoría y corregí un mensaje.
 6. **Reporte** → abrí o descargá el resumen agregado en HTML o texto.

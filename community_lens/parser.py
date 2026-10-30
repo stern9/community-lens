@@ -43,6 +43,7 @@ _MEDIA_MARKED_RE = re.compile(
 )
 _MEDIA_WHOLE_RE = re.compile(rf"^({_MEDIA_WORDS})\s+(?:{_OMIT})$", re.I)
 _ATTACHED_RE = re.compile(r"<(?:attached|adjunto):\s*([^>]{1,200})>", re.I)
+_STICKER_FILE_RE = re.compile(r"(?:^|[-_])STICKER[-_][^/\\]*\.webp$", re.I)
 _DOC_META_RE = re.compile(r"\s*•\s*\u200e?\d+\s+(?:pages?|páginas?)\s*$", re.I)
 _EDITED_RE = re.compile(r"\u200e?<(?:This message was edited|Se editó este mensaje\.?)>", re.I)
 _DELETED_RE = re.compile(
@@ -97,6 +98,11 @@ def match_text(text: str) -> str:
     t = _ATTACHED_RE.sub(" ", _MEDIA_MARKED_RE.sub(" ", text))
     t = _WS_RE.sub(" ", strip_marks(t)).strip()
     return "" if _MEDIA_WHOLE_RE.match(t) else t
+
+
+def is_sticker_file(name: str) -> bool:
+    """Nombre con que WhatsApp exporta un sticker: «00000012-STICKER-2026-01-31-21-27-06.webp» (iOS)."""
+    return bool(_STICKER_FILE_RE.search(name))
 
 
 def clean_author(raw: str) -> str:
@@ -169,6 +175,7 @@ class ParsedRecord:
     needs_review: bool = False
     review_reason: str | None = None
     links: list[tuple[str, str]] = field(default_factory=list)
+    attachment: str | None = None  # nombre del archivo en «<attached: …>» (exportación "con archivos")
 
 
 @dataclass
@@ -371,8 +378,10 @@ def parse(text: str, date_order: str) -> dict:
             media_kind = _MEDIA_KIND.get(_MEDIA_WHOLE_RE.match(cleaned).group(1).lower(), "unknown")
             content = ""
         am = _ATTACHED_RE.search(content)
+        attachment = None
         if am:
-            media_kind = media_kind or "attachment"
+            attachment = am.group(1).strip()
+            media_kind = media_kind or ("sticker" if is_sticker_file(attachment) else "attachment")
             content = content[: am.start()] + " " + content[am.end():]
         content = _EDITED_RE.sub("", content)
         content = strip_marks(content).strip()
@@ -387,6 +396,7 @@ def parse(text: str, date_order: str) -> dict:
         rec.is_deleted = is_deleted
         rec.is_edited = edited
         rec.media_kind = media_kind
+        rec.attachment = attachment
         rec.is_poll = bool(_POLL_RE.match(cleaned))
         if is_deleted:
             rec.subtype, content = "deleted", ""

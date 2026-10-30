@@ -108,7 +108,9 @@ function destinationForm(p: ImportPreview, rec: Recommendation, order: DateOrder
   const syncName = (): void => { nameField.hidden = dest.value !== ""; };
   dest.addEventListener("change", syncName);
   syncName();
-  const go = h("button", { disabled: rec.action === "duplicate" }, "Importar");
+  // Un archivo ya importado solo se vuelve a mandar si trae stickers: se agregan sus imágenes, nada más.
+  const onlyStickers = rec.action === "duplicate" && p.stickers_in_file > 0;
+  const go = h("button", { disabled: rec.action === "duplicate" && !onlyStickers }, onlyStickers ? "Agregar stickers" : "Importar");
   const msg = h("div");
   const send = (confirmLow: boolean): Promise<ImportCommitResult> => api.commitImport({
     token: p.token, file_name: name, chat_id: dest.value ? Number(dest.value) : null, chat_name: newName.value,
@@ -128,14 +130,16 @@ function destinationForm(p: ImportPreview, rec: Recommendation, order: DateOrder
       selectChat(r.chat_id);
       syncScope();
       const text = r.status === "duplicate" ? r.message
-        : `Importado. ${n(r.reconciliation.added)} registros nuevos; ${n(r.reconciliation.matched_existing)} ya estaban (solo se anotó la nueva fuente); ${n(r.reconciliation.only_in_previous)} existen solo en importaciones previas y se conservaron; ${n(r.reconciliation.ambiguous_pairs)} quedaron marcados como solape ambiguo. `;
+        : `Importado. ${n(r.reconciliation.added)} registros nuevos; ${n(r.reconciliation.matched_existing)} ya estaban (solo se anotó la nueva fuente); ${n(r.reconciliation.only_in_previous)} existen solo en importaciones previas y se conservaron; ${n(r.reconciliation.ambiguous_pairs)} quedaron marcados como solape ambiguo. ` +
+          (r.stickers_added ? `${n(r.stickers_added)} stickers quedaron con su imagen. ` : "");
       put(msg, h("div", { class: "notice" }, text, " ", h("a", { href: "#/resumen" }, "Ver resumen →")));
       await onImported();
     } catch (e) { put(msg, h("p", { class: "error" }, errMsg(e))); go.disabled = false; }
   })());
   return [
     h("fieldset", null, h("legend", null, "Destino"),
-      h("p", null, h("small", null, rec.action === "update" ? "Sugerencia: actualización de un grupo existente. " : rec.action === "duplicate" ? "Archivo ya importado. " : "Sugerencia: grupo nuevo. ", rec.reason)),
+      h("p", null, h("small", null, rec.action === "update" ? "Sugerencia: actualización de un grupo existente. " : rec.action === "duplicate" ? "Archivo ya importado. " : "Sugerencia: grupo nuevo. ", rec.reason,
+        p.stickers_in_file ? ` El .zip trae la imagen de ${n(p.stickers_in_file)} stickers.` : "")),
       h("div", { class: "row end" }, h("label", { class: "field" }, "Importar en", dest), nameField),
       h("p", null, h("small", null, "Al actualizar, los mensajes se alinean por secuencia y contexto: no se borran mensajes existentes y las repeticiones legítimas se conservan."))),
     h("div", { class: "row" }, go), msg];

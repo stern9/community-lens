@@ -186,6 +186,8 @@ export interface ImportPreview {
   diagnostics: Diagnostics | null;
   candidates: ImportCandidate[];
   recommendation: ImportRecommendation | null;
+  /** Mensajes del TXT cuyo sticker vino en el .zip "con archivos" (0 en un TXT suelto o sin archivos). */
+  stickers_in_file: number;
   date_order_warning?: string;
 }
 
@@ -195,12 +197,16 @@ export interface ImportCommitImported {
   import_id: number;
   diagnostics: Diagnostics;
   reconciliation: Reconciliation;
+  /** Mensajes que quedaron con la imagen de su sticker por primera vez. */
+  stickers_added: number;
 }
 
 export interface ImportCommitDuplicate {
   status: "duplicate";
   chat_id: number;
   import_id: number;
+  /** El TXT ya estaba, pero el .zip trajo stickers que todavía no tenían imagen. */
+  stickers_added: number;
   message: string;
 }
 
@@ -566,6 +572,38 @@ export interface ResourceLibrary {
   items: (DocumentResource | LinkResource)[];
   counts: { documents: number; document_shares: number; unnamed_documents: number; links: number; link_shares: number };
   note: string;
+}
+
+// ---------------------------------------------------------------- stickers --
+
+export interface StickerSender {
+  author_id: number;
+  label: string;
+  times: number;
+}
+
+export interface StickerItem {
+  /** Identifica la imagen por contenido; /api/stickers/{sha256} la devuelve. */
+  sha256: string;
+  times: number;
+  first_ts: LocalTimestamp;
+  last_ts: LocalTimestamp;
+  /** El envío más reciente del período. */
+  message_id: number;
+  /** Hasta tres, de quien más lo mandó a quien menos. */
+  senders: StickerSender[];
+}
+
+export interface StickerRanking {
+  /** Stickers del período, con o sin imagen. */
+  sticker_messages: number;
+  /** Los que tienen imagen (vinieron en un .zip con archivos): solo estos entran al ranking. */
+  with_image: number;
+  distinct: number;
+  items: StickerItem[];
+  /** Quiénes mandan más stickers, con o sin imagen. */
+  senders: StickerSender[];
+  definitions: Record<string, string>;
 }
 
 // ---------------------------------------------------------------- periódico --

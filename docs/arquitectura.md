@@ -10,6 +10,7 @@ community_lens/
   stats.py       Estadísticas oficiales en SQL, con definiciones y denominadores.
   search.py      Búsqueda FTS5, vista de contexto, conteos por categoría.
   resources.py   Biblioteca de documentos (agrupados por versión) y enlaces; identidad de un enlace.
+  stickers.py    Ranking de stickers por contenido de la imagen, con quién los manda.
   classify/      Proveedores de clasificación: rules (local), jev (opcional), openai_decisions (reservado).
     labels.py    Ejecución vigente, categoría efectiva y correcciones humanas: la única definición.
   report.py      Reporte agregado HTML / texto.
@@ -46,6 +47,7 @@ Principios que atraviesan el código:
 | `messages` | ID interno, referencia `CL-…`, chat, autor original, hora del archivo / UTC / local, texto original, tipo, posición en la secuencia |
 | `message_sources` | En qué archivo y líneas aparece cada mensaje (uno por importación que lo contiene) |
 | `links`, `messages_fts` | URLs con dominio; índice de texto completo |
+| `sticker_images`, `message_stickers` | Imagen de cada sticker distinto (por SHA-256 del contenido, solo `.webp` verificados) y qué sticker es cada mensaje. Solo los llena un `.zip` con archivos; las imágenes que ningún grupo usa se borran con el grupo |
 | `analysis_runs` | Ejecución de clasificación: proveedor, modelo, versión de taxonomía, configuración, fechas, estado |
 | `classifications` | Predicción original por mensaje y categoría (con puntuación solo si el proveedor la devuelve) |
 | `human_labels` | Correcciones humanas, solo-agregado; la más reciente rige y nunca pisa la predicción |
@@ -98,6 +100,7 @@ Sin red, con una base temporal por prueba y sin leer el `.env` de quien las corr
 | `test_parser.py` | Multilínea y Unicode, formatos iOS / Android / exportador de terceros, reloj de 12 y 24 h, fechas ambiguas y contradictorias, avisos del sistema, multimedia omitida, eliminados, encuestas, cada línea contabilizada |
 | `test_import.py` | Elección obligatoria de fecha ambigua, trazabilidad, reimportación idéntica (también con el archivo en dos grupos), repeticiones legítimas, exportaciones solapadas, con y sin archivos, claves de una base anterior, otro chat no se fusiona, alias, zona horaria, eliminación en cascada y de las páginas leídas |
 | `test_resources.py` | Agrupación de documentos por versión, reenvíos de versiones viejas, identidad de un enlace |
+| `test_stickers.py` | Solo stickers `.webp` reales del `.zip`, ranking por contenido, imágenes para mensajes de una exportación sin archivos sin duplicar, el mismo TXT ya importado solo agrega imágenes, borrado que respeta las de otros grupos, endpoint de la imagen |
 | `test_stats_search.py` | Totales y denominadores, meses parciales, enlaces vs. mensajes con enlaces, FTS y filtros, contexto, reporte solo agregado y escapado |
 | `test_classify.py` | Reglas, registro de ejecuciones, correcciones humanas sin sobrescribir, clasificados iguales en resumen y mensual, ejecución que falla no queda en curso, bloqueos y forma de la solicitud de Jev |
 | `test_newspaper.py` | Tipos de enlace, vista previa sin red ni modelos, seudonimización, enlaces solo del chat, consentimiento para lecturas, modo automático, `.zip`, línea de comandos (rango por defecto, grupos homónimos, validación, `--continuar`, códigos de salida, carpeta, salida JSON), ediciones guardadas con el formato anterior; borrador, aprobación y publicación: base anterior a las columnas de estado, banda de borrador, bytes aprobados frente a una plantilla nueva, integridad dañada (también con un registro de aprobación incompleto o ilegible), registro y validación de la aprobación, descartar y recuperar, borrador pendiente, todo `INSERT` nombra `status`; en el comando: `--aprobar` al generar y con `--edicion` (sin modelo ni red), quién, canal y destino rechazados con código 2 antes de importar, `--destino`, edición de otro grupo, `--descartar` y `--recuperar`, borrador pendiente que frena `--continuar`, `--borrador`, `--listar`, JSON de las acciones y aprobada dañada con código 1; versión pública: nada del sitio lleva la lectura, el nombre del grupo ni "En números" (frase y nombre centinela), `?publico=1` combinado con `?borrador=1` y sus nombres de archivo, rejilla de una columna sin cronología, heredada con lecturas publicada sin ellas, aprobadas antes de la versión pública (con y sin lecturas) fuera del sitio hasta reaprobarlas, bytes con lecturas salteados aunque digan `public`, `--borrador` como versión pública con banda igual a `?publico=1&borrador=1`, y los motivos de reaprobación en `--listar` |
