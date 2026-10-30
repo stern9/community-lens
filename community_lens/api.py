@@ -11,11 +11,12 @@ from typing import Literal
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Path as PathParam
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import classify, edition, importer, llm, newspaper, report, resources, search, stats
+from . import classify, edition, importer, llm, newspaper, report, resources, search, stats, stickers
 from .classify import labels
 from .classify.taxonomy import CATEGORY_KEYS, TAXONOMY_VERSION
 from .classify.taxonomy import public as taxonomy_public
@@ -296,8 +297,9 @@ def chat_imports(chat_id: int, con=Depends(db)):
 @app.post("/api/imports/preview")
 async def import_preview(request: Request, filename: str = Query(..., max_length=300), timezone: str | None = None,
                          date_order: str | None = Query(None, pattern="^(MDY|DMY|YMD)$"), con=Depends(db)):
-    data, name = importer.unzip_chat(await request.body(), Path(filename).name)
-    res = importer.preview(con, data, name, timezone, date_order)
+    body = await request.body()
+    data, name = importer.unzip_chat(body, Path(filename).name)
+    res = importer.preview(con, data, name, timezone, date_order, stickers=importer.zip_stickers(body))
     log.info("vista previa: %s bytes, estado de fecha=%s", len(data), res["date_detection"]["status"])
     return res
 
@@ -368,6 +370,23 @@ def get_resources(chat_id: int, kind: str = Query("document", pattern="^(documen
     _chat(con, chat_id)
     return resources.library(con, chat_id, kind=kind, q=q, order=order, d_from=_date(date_from), d_to=_date(date_to),
                              limit=limit, offset=offset)
+
+
+@app.get("/api/stickers")
+def get_stickers(chat_id: int, date_from: str | None = Query(None, alias="from"), date_to: str | None = Query(None, alias="to"),
+                 limit: int = Query(60, ge=1, le=200), con=Depends(db)):
+    """Ranking de los stickers con imagen del chat en el período, con quién los manda."""
+    _chat(con, chat_id)
+    return stickers.ranking(con, chat_id, _date(date_from), _date(date_to), limit)
+
+
+@app.get("/api/stickers/{sha256}")
+def get_sticker_image(sha256: str = PathParam(..., pattern="^[0-9a-f]{64}$"), con=Depends(db)):
+    """La imagen tal como vino en el .zip. Ya se verificó que es .webp al importarla; nosniff la deja en imagen."""
+    data = stickers.image(con, sha256)
+    if data is None:
+        raise HTTPException(404, "Ese sticker no está en la base.")
+    return Response(data, media_type="image/webp", headers={"Cache-Control": "private, max-age=86400"})
 
 
 @app.get("/api/messages/{message_id}/context")

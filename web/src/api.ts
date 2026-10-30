@@ -5,7 +5,7 @@ import type {
   ChatUpdateRequest, Config, ContextResult, DateOrder, DeleteChatResult, ImportCommitRequest, ImportCommitResult,
   ImportPreview, ImportRecord, LabelsRequest, LabelsResult, MergeAuthorRequest, NewspaperEdition, NewspaperPreview,
   NewspaperRequest, NewspaperResult, OkResult, ResourceLibrary, RunListItem, RunStartRequest, RunStartResult,
-  SearchResult, Stats,
+  SearchResult, Stats, StickerRanking,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -102,6 +102,9 @@ export const unmergeAuthor = (authorId: number): Promise<OkResult> => sendJson(`
 export const search = (p: SearchParams): Promise<SearchResult> => getJson("/api/search?" + qs({ ...p }));
 export const getResources = (s: Scope, kind: "document" | "link", q: string, order: "recent" | "shared", offset: number): Promise<ResourceLibrary> =>
   getJson("/api/resources?" + qs({ chat_id: s.chat_id, from: s.from, to: s.to, kind, q, order, limit: 40, offset }));
+export const getStickers = (s: Scope): Promise<StickerRanking> => getJson("/api/stickers?" + scopeQs(s));
+/** Dirección de la imagen de un sticker; se usa directo en <img src>. */
+export const stickerSrc = (sha256: string): string => `/api/stickers/${sha256}`;
 export const getContext = (messageId: number, before: number, after: number): Promise<ContextResult> =>
   getJson(`/api/messages/${messageId}/context?` + qs({ before, after }));
 /** `categories = null` vuelve a la clasificación automática. La predicción original nunca se modifica. */

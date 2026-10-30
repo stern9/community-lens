@@ -22,7 +22,7 @@ npm run typecheck    # solo verificar tipos
 | `state.ts` | Estado compartido: grupo y período elegidos, configuración y lo guardado en memoria del grupo activo |
 | `shell.ts` | El marco fijo de la página: zona de contenido, panel lateral, barra superior, avisos |
 | `router.ts` | Traduce el `#hash` en una vista; una entrada por pestaña |
-| `views/` | Una pantalla por archivo: las siete pestañas (`resumen`, `explorar`, `recursos`, `categorias`, `reporte`, `periodico`, `importar`) y el panel de contexto de un mensaje (`contexto`) |
+| `views/` | Una pantalla por archivo: las ocho pestañas (`resumen`, `explorar`, `recursos`, `stickers`, `categorias`, `reporte`, `periodico`, `importar`) y el panel de contexto de un mensaje (`contexto`) |
 | `components/` | Piezas que usan varias pantallas (`message.ts`: la tarjeta de un mensaje) |
 | `app.ts` | Punto de entrada: carga inicial y conexión de la barra superior con el enrutador |
 

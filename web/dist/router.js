@@ -12,9 +12,10 @@ import { viewPeriodico } from "./views/periodico.js";
 import { viewRecursos } from "./views/recursos.js";
 import { viewReporte } from "./views/reporte.js";
 import { viewResumen } from "./views/resumen.js";
+import { viewStickers } from "./views/stickers.js";
 /** Una entrada por pestaña de index.html (atributo data-tab). */
 const VIEWS = {
-    resumen: viewResumen, explorar: viewExplorar, recursos: viewRecursos, categorias: viewCategorias,
+    resumen: viewResumen, explorar: viewExplorar, recursos: viewRecursos, stickers: viewStickers, categorias: viewCategorias,
     importar: viewImportar, reporte: viewReporte, periodico: viewPeriodico,
 };
 const isTab = (x) => x !== undefined && Object.hasOwn(VIEWS, x);

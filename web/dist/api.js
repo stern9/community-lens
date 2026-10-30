@@ -60,6 +60,9 @@ export const mergeAuthor = (authorId, into) => sendJson(`/api/authors/${authorId
 export const unmergeAuthor = (authorId) => sendJson(`/api/authors/${authorId}/unmerge`, {});
 export const search = (p) => getJson("/api/search?" + qs({ ...p }));
 export const getResources = (s, kind, q, order, offset) => getJson("/api/resources?" + qs({ chat_id: s.chat_id, from: s.from, to: s.to, kind, q, order, limit: 40, offset }));
+export const getStickers = (s) => getJson("/api/stickers?" + scopeQs(s));
+/** Dirección de la imagen de un sticker; se usa directo en <img src>. */
+export const stickerSrc = (sha256) => `/api/stickers/${sha256}`;
 export const getContext = (messageId, before, after) => getJson(`/api/messages/${messageId}/context?` + qs({ before, after }));
 /** `categories = null` vuelve a la clasificación automática. La predicción original nunca se modifica. */
 export const setLabels = (messageId, categories) => sendJson(`/api/messages/${messageId}/labels`, { categories });

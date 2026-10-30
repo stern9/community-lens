@@ -104,6 +104,21 @@ CREATE TABLE IF NOT EXISTS links (
 CREATE INDEX IF NOT EXISTS ix_links_message ON links(message_id);
 CREATE INDEX IF NOT EXISTS ix_links_domain ON links(domain);
 
+-- Imágenes de stickers que vinieron en un .zip exportado "con archivos": una fila por contenido distinto, así el
+-- mismo sticker enviado muchas veces (o en varios grupos) se reconoce como uno. Solo se guardan .webp verificados.
+CREATE TABLE IF NOT EXISTS sticker_images (
+    sha256      TEXT PRIMARY KEY,
+    bytes       BLOB NOT NULL,
+    file_bytes  INTEGER NOT NULL
+);
+-- Qué sticker es cada mensaje. Un mensaje de una exportación sin archivos no tiene fila: se sabe que fue un
+-- sticker, no cuál. Las imágenes que ya no usa ningún mensaje se borran con el grupo (importer.delete_chat).
+CREATE TABLE IF NOT EXISTS message_stickers (
+    message_id  INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+    sha256      TEXT NOT NULL REFERENCES sticker_images(sha256)
+);
+CREATE INDEX IF NOT EXISTS ix_message_stickers_sha ON message_stickers(sha256);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     content, tokenize = "unicode61 remove_diacritics 2"
 );

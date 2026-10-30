@@ -1402,12 +1402,17 @@
         "status": {
           "const": "duplicate",
           "type": "string"
+        },
+        "stickers_added": {
+          "description": "El TXT ya estaba, pero el .zip trajo stickers que todavía no tenían imagen.",
+          "type": "number"
         }
       },
       "required": [
         "status",
         "chat_id",
         "import_id",
+        "stickers_added",
         "message"
       ],
       "type": "object"
@@ -1430,6 +1435,10 @@
         "status": {
           "const": "imported",
           "type": "string"
+        },
+        "stickers_added": {
+          "description": "Mensajes que quedaron con la imagen de su sticker por primera vez.",
+          "type": "number"
         }
       },
       "required": [
@@ -1437,7 +1446,8 @@
         "chat_id",
         "import_id",
         "diagnostics",
-        "reconciliation"
+        "reconciliation",
+        "stickers_added"
       ],
       "type": "object"
     },
@@ -1588,6 +1598,10 @@
             }
           ]
         },
+        "stickers_in_file": {
+          "description": "Mensajes del TXT cuyo sticker vino en el .zip \"con archivos\" (0 en un TXT suelto o sin archivos).",
+          "type": "number"
+        },
         "suggested_name": {
           "type": "string"
         },
@@ -1610,7 +1624,8 @@
         "needs_date_order",
         "diagnostics",
         "candidates",
-        "recommendation"
+        "recommendation",
+        "stickers_in_file"
       ],
       "type": "object"
     },
@@ -3381,6 +3396,108 @@
         "media_by_kind",
         "system_by_subtype",
         "definitions"
+      ],
+      "type": "object"
+    },
+    "StickerItem": {
+      "additionalProperties": false,
+      "properties": {
+        "first_ts": {
+          "$ref": "#/definitions/LocalTimestamp"
+        },
+        "last_ts": {
+          "$ref": "#/definitions/LocalTimestamp"
+        },
+        "message_id": {
+          "description": "El envío más reciente del período.",
+          "type": "number"
+        },
+        "senders": {
+          "description": "Hasta tres, de quien más lo mandó a quien menos.",
+          "items": {
+            "$ref": "#/definitions/StickerSender"
+          },
+          "type": "array"
+        },
+        "sha256": {
+          "description": "Identifica la imagen por contenido; /api/stickers/{sha256} la devuelve.",
+          "type": "string"
+        },
+        "times": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "sha256",
+        "times",
+        "first_ts",
+        "last_ts",
+        "message_id",
+        "senders"
+      ],
+      "type": "object"
+    },
+    "StickerRanking": {
+      "additionalProperties": false,
+      "properties": {
+        "definitions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "distinct": {
+          "type": "number"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/StickerItem"
+          },
+          "type": "array"
+        },
+        "senders": {
+          "description": "Quiénes mandan más stickers, con o sin imagen.",
+          "items": {
+            "$ref": "#/definitions/StickerSender"
+          },
+          "type": "array"
+        },
+        "sticker_messages": {
+          "description": "Stickers del período, con o sin imagen.",
+          "type": "number"
+        },
+        "with_image": {
+          "description": "Los que tienen imagen (vinieron en un .zip con archivos): solo estos entran al ranking.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "sticker_messages",
+        "with_image",
+        "distinct",
+        "items",
+        "senders",
+        "definitions"
+      ],
+      "type": "object"
+    },
+    "StickerSender": {
+      "additionalProperties": false,
+      "properties": {
+        "author_id": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string"
+        },
+        "times": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "author_id",
+        "label",
+        "times"
       ],
       "type": "object"
     },

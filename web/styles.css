@@ -72,6 +72,12 @@ figure.clplot-figure, figure { margin: 0; max-width: 100%; }
 .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; }
 .filters .wide { grid-column: 1 / -1; }
 .checks { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; }
+.stickers { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); gap: 10px; margin-top: 16px; }
+.sticker { display: grid; gap: 4px; position: relative; align-content: start; }
+.stickers .card + .card { margin-top: 0; }
+.sticker img { width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; }
+.sticker .rank { position: absolute; top: 8px; left: 10px; font-size: 13px; font-weight: 600; }
+.sticker .times { font-size: 20px; color: var(--accent); }
 .msg { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface); }
 .msg + .msg { margin-top: 8px; }
 .msg.target { border-color: var(--series); box-shadow: 0 0 0 2px var(--series-soft); }
