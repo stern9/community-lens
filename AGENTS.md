@@ -44,7 +44,7 @@ lo pida. No propongás lo que ya está decidido (ver al final).
   una base real con el esquema actual. Un cambio de esquema o de datos derivados es aditivo, idempotente y se
   aplica al abrir una base vieja (el `ALTER TABLE` condicional en `db.connect` es el modelo). Una edición del
   periódico ya guardada tiene que seguir abriéndose: para cambiar su forma, seguí las instrucciones de la
-  cabecera de `edition.py` (`FORMAT` y `upgrade()`).
+  cabecera de `newspaper/edition.py` (`FORMAT` y `upgrade()`).
 - No modifiqués los archivos originales de los chats y no imprimás secretos ni texto de mensajes en logs:
   los logs registran conteos y estados, el log de accesos HTTP está apagado a propósito.
 
@@ -87,7 +87,7 @@ regenerados junto con el cambio. Para la línea de comandos, `.venv/bin/python -
 | Parser e importación con reconciliación | `parser.py`, `importer.py` | ídem |
 | Estadísticas, búsqueda, recursos, reporte | `stats.py`, `search.py`, `resources.py`, `report.py` | [docs/metricas.md](docs/metricas.md) |
 | Clasificación (reglas local, Jev opcional) | `classify/` | [docs/clasificacion.md](docs/clasificacion.md) |
-| Periódico: reglas, modelos, plantilla, formato guardado, CLI | `newspaper.py`, `llm.py`, `newspaper_html.py`, `edition.py`, `cli.py` | [docs/periodico.md](docs/periodico.md) |
+| Periódico: reglas, modelos, plantilla, formato guardado, CLI | `newspaper/` (`__init__.py`, `edition.py`, `template.py`), `llm.py`, `cli.py` | [docs/periodico.md](docs/periodico.md) |
 | API HTTP y cabeceras de seguridad | `api.py` | [docs/seguridad.md](docs/seguridad.md) |
 | Frontend (TypeScript estricto, sin framework) | `web/src/` → `web/dist/`; librerías copiadas en `web/vendor/` | [docs/frontend.md](docs/frontend.md) |
 | Diagramas de flujo de datos | `docs/diagramas/` | [docs/diagramas/README.md](docs/diagramas/README.md) |

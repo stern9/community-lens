@@ -2,9 +2,9 @@
 
 Una edición se guarda como JSON (editions.data) y se dibuja de nuevo cada vez que se abre, así una mejora de la
 plantilla llega también a las ediciones viejas; lo que se publica de una aprobada, en cambio, son los bytes de su
-versión pública (newspaper_html.render con public: sin lecturas, sin "En números" ni nombre del grupo) dibujados
-al aprobarla (ver "Ciclo de vida"). Quien la arma (newspaper.py) usa build(); quien la
-dibuja (newspaper_html.py) recibe siempre una Edition completa, porque todo lo que sale de la base pasa por
+versión pública (template.render con public: sin lecturas, sin "En números" ni nombre del grupo) dibujados
+al aprobarla (ver "Ciclo de vida"). Quien la arma (newspaper/__init__.py) usa build(); quien la
+dibuja (template.py) recibe siempre una Edition completa, porque todo lo que sale de la base pasa por
 upgrade(), que lleva cualquier forma anterior a la actual. Para agregar un campo: declararlo acá, llenarlo en
 build(), darle su valor por defecto en upgrade() y subir FORMAT.
 
@@ -35,7 +35,8 @@ import json
 from datetime import UTC, datetime
 from typing import TypedDict
 
-from . import dates, newspaper_html
+from .. import dates
+from . import template
 
 FORMAT = 4
 
@@ -267,7 +268,7 @@ def blocked_reason(row) -> str | None:
         return "dañada: no coincide con su hash; reaprobala para publicarla"
     if not upgrade_approval(row["approval"])["public"]:
         return "aprobada antes de la versión pública: reaprobala para publicarla"
-    if newspaper_html.READINGS_MARKER in approved_bytes(row):  # segunda defensa, aunque diga public
+    if template.READINGS_MARKER in approved_bytes(row):  # segunda defensa, aunque diga public
         return "contiene lecturas de la conversación: reaprobala para publicarla"
     return None
 
@@ -275,7 +276,7 @@ def blocked_reason(row) -> str | None:
 def leaks_readings(row) -> bool | None:
     """Si los bytes aprobados llevan lecturas de la conversación. None si la fila no está aprobada o no tiene bytes."""
     page = approved_bytes(row) if row["status"] == "aprobada" else None
-    return None if page is None else newspaper_html.READINGS_MARKER in page
+    return None if page is None else template.READINGS_MARKER in page
 
 
 # ------------------------------------------------------------------- base --
@@ -310,7 +311,7 @@ def _up_to_date(r) -> bool | None:
     if r["status"] != "aprobada" or r["approved_html"] is None:
         return None
     try:
-        return approved_bytes(r) == newspaper_html.render(upgrade(json.loads(r["data"])), public=True).encode("utf-8")
+        return approved_bytes(r) == template.render(upgrade(json.loads(r["data"])), public=True).encode("utf-8")
     except ValueError:  # guardada por una versión más nueva: esta no sabe dibujarla, así que no puede compararla
         return None
 
@@ -365,7 +366,7 @@ def approve(con, edition_id: int, by: str, via: str, to: str | None = None) -> A
     row, ed = found
     if row["status"] == "descartada":
         raise ValueError(f"La edición {edition_id} está descartada: recuperala antes de aprobarla.")
-    page = newspaper_html.render(ed, public=True).encode("utf-8")
+    page = template.render(ed, public=True).encode("utf-8")
     approval: Approval = {"hash": page_hash(page), "by": by, "via": via, "at": _now(), "to": to, "public": True}
     con.execute("UPDATE editions SET status='aprobada', approval=?, approved_html=? WHERE id=?",
                 (json.dumps(approval, ensure_ascii=False), page, edition_id))

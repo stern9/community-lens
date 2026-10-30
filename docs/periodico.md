@@ -36,13 +36,13 @@ El diagrama [`diagramas/periodico.html`](diagramas/periodico.html) muestra el re
   ningún rastreador), porque a un navegador sin sesión no le entregan esa ficha; Facebook recorta el texto y la
   edición se lo avisa al modelo. Si la plataforma no entregó nada (cuenta privada, publicación borrada), el enlace no
   ocupa una tarjeta: va en la línea "También se compartió", con la red y la fecha, sin texto inventado; lo mismo un
-  sitio sin texto legible. Cada red lleva su logo, de Simple Icons (`community_lens/brand_icons.py`); LinkedIn no está
+  sitio sin texto legible. Cada red lleva su logo, de Simple Icons (`community_lens/newspaper/brand_icons.py`); LinkedIn no está
   ahí y su ícono está dibujado en ese mismo archivo (`DRAWN`).
-- **Plantilla fija** (`community_lens/newspaper_html.py` y `newspaper.css`): un HTML sin scripts ni recursos externos.
+- **Plantilla fija** (`community_lens/newspaper/template.py` y `newspaper.css`): un HTML sin scripts ni recursos externos.
 
 ## Reglas de una edición
 
-Las aplica `community_lens/newspaper.py`, igual para la pantalla y para la línea de comandos:
+Las aplica `community_lens/newspaper/`, igual para la pantalla y para la línea de comandos:
 
 - **Rango.** Fechas `AAAA-MM-DD` válidas y en orden. Lo que falte se completa: termina el último día con mensajes
   de participantes (los avisos del sistema posteriores no cuentan) y cubre 7 días contando ese.
@@ -131,7 +131,7 @@ Códigos de salida, para que un guion decida sin leer los mensajes:
 ### Borrador, aprobación y publicación
 
 Toda edición recién generada, desde la pantalla o desde el comando, queda como **borrador**: no entra al sitio hasta
-que alguien la revisa y la aprueba. Los estados (`editions.status`, definidos en `community_lens/edition.py`):
+que alguien la revisa y la aprueba. Los estados (`editions.status`, definidos en `community_lens/newspaper/edition.py`):
 
 - **borrador**: recién generada, o recuperada. No se publica; su página lleva la banda "Borrador, no compartir".
 - **aprobada**: alguien la aprobó. Al aprobar se dibuja una sola vez su versión pública, sin banda, y se guardan esos **bytes exactos**
@@ -178,7 +178,7 @@ manual, nunca en un guion programado**: aprobaría una edición que nadie vio.
 
 El sitio lleva solo la versión pública de cada edición; la pantalla y `/periodico/<id>` siguen mostrando la completa.
 Criterio: sale todo lo que describe la **conversación** y queda lo que viene de las **páginas enlazadas**, que el
-modelo redactó sin ver ningún mensaje. Es la misma plantilla (`newspaper_html.render(…, public=True)`), no una copia.
+modelo redactó sin ver ningún mensaje. Es la misma plantilla (`template.render(…, public=True)`), no una copia.
 
 | Elemento | De dónde sale | Versión pública | Por qué |
 |---|---|---|---|
@@ -259,7 +259,7 @@ para el horario.
 
 Una edición se guarda como JSON en `editions.data` y se dibuja de nuevo cada vez que se abre (y al publicarla, si es
 heredada); así una mejora de la plantilla llega también a las ediciones viejas. De una aprobada se publican los bytes
-guardados al aprobarla (ver "Borrador, aprobación y publicación"). `community_lens/edition.py` es el único lugar que
+guardados al aprobarla (ver "Borrador, aprobación y publicación"). `community_lens/newspaper/edition.py` es el único lugar que
 conoce sus campos: los declara, lleva un número de formato (`FORMAT`) y tiene una sola función, `upgrade()`, que
 convierte cualquier edición guardada con una forma anterior a la actual. Abrir una edición vieja no la reescribe.
 La columna `editions.html`, de una versión anterior, no se lee (ver [arquitectura.md](arquitectura.md#modelo-de-datos)).

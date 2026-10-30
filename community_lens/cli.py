@@ -24,8 +24,8 @@ sitio. Con --json la salida estándar lleva un solo objeto JSON con el resultado
 la salida de error; nunca lleva texto de mensajes del chat. La excepción es el código 2: argparse rechaza los
 argumentos antes de que exista resultado, así que ahí no hay JSON, solo el mensaje de uso en stderr.
 
-El rango, el máximo de artículos y a qué grupo se refiere un nombre los resuelve newspaper.py, y los estados de una
-edición edition.py, con las mismas reglas que usa la pantalla.
+El rango, el máximo de artículos y a qué grupo se refiere un nombre los resuelve newspaper/, y los estados de una
+edición newspaper/edition.py, con las mismas reglas que usa la pantalla.
 """
 from __future__ import annotations
 
@@ -35,9 +35,10 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from . import edition, importer, llm, newspaper
+from . import importer, llm, newspaper
 from .config import settings
 from .db import connect
+from .newspaper import edition
 
 EXIT_OK, EXIT_ERROR, EXIT_USAGE, EXIT_NOTHING = 0, 1, 2, 3
 EXPORTS = (".zip", ".txt")

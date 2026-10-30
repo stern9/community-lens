@@ -16,12 +16,13 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import classify, edition, importer, llm, newspaper, report, resources, search, stats, stickers
+from . import classify, importer, llm, newspaper, report, resources, search, stats, stickers
 from .classify import labels
 from .classify.taxonomy import CATEGORY_KEYS, TAXONOMY_VERSION
 from .classify.taxonomy import public as taxonomy_public
 from .config import ROOT, settings
 from .db import connect
+from .newspaper import edition
 
 log = logging.getLogger("community_lens")
 WEB = ROOT / "web"
