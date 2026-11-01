@@ -8,7 +8,7 @@ annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
     # via pydantic
-anthropic==1.13.0
+anthropic==2.3.0
     # via -r requirements.in
 anyio==4.15.1
     # via
@@ -19,15 +19,15 @@ click==8.5.0
     # via uvicorn
 docstring-parser==0.18.0
     # via anthropic
-fastapi==0.143.0
+fastapi==0.162.0
     # via -r requirements.in
 h11==0.16.0
     # via
     #   httpcore2
     #   uvicorn
-httpcore2==2.13.1
+httpcore2==2.16.0
     # via httpx2
-httpx2==2.13.1
+httpx2==2.16.0
     # via anthropic
 idna==3.20
     # via
@@ -36,7 +36,9 @@ idna==3.20
 jiter==0.17.0
     # via anthropic
 opentelemetry-api==1.45.1
-    # via fastapi
+    # via
+    #   anthropic
+    #   fastapi
 pydantic==2.14.0
     # via
     #   anthropic
@@ -66,7 +68,7 @@ typing-inspection==0.4.4
     # via
     #   fastapi
     #   pydantic
-tzdata==2026.5
+tzdata==2026.6
     # via -r requirements.in
 uvicorn==0.54.0
     # via -r requirements.in
