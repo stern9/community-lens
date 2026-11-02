@@ -98,7 +98,10 @@ def _post(t: Transport, url: str, headers: dict, payload: dict) -> dict:
 def _anthropic(p: Provider, system: str, user: str, t: Transport) -> str:
     import anthropic
 
-    client = anthropic.Anthropic(api_key=p.key, timeout=TIMEOUT, **t.sdk_options())
+    # Sin OpenTelemetry: el SDK lo activa solo si encuentra un tracer global o variables de entorno que lo
+    # configuren, y entonces exportaría a otro destino datos de la llamada (con ANTHROPIC_OPEN_TELEMETRY_* incluso el
+    # texto). Lo que sale de la máquina lo decide el usuario y lo lee config.py, no el entorno del proceso.
+    client = anthropic.Anthropic(api_key=p.key, timeout=TIMEOUT, open_telemetry=False, **t.sdk_options())
     try:
         # Fallback del servidor: si un clasificador de seguridad declina, se reintenta en otro modelo.
         res = client.beta.messages.create(
