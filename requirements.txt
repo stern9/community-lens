@@ -8,7 +8,7 @@ annotated-doc==0.0.5
     # via fastapi
 annotated-types==0.8.0
     # via pydantic
-anthropic==1.13.0
+anthropic==2.3.0
     # via -r requirements.in
 anyio==4.15.1
     # via
@@ -36,7 +36,9 @@ idna==3.20
 jiter==0.17.0
     # via anthropic
 opentelemetry-api==1.45.1
-    # via fastapi
+    # via
+    #   anthropic
+    #   fastapi
 pydantic==2.14.0
     # via
     #   anthropic

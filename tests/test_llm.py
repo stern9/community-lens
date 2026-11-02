@@ -26,9 +26,20 @@ def test_anthropic_request():
     data, t = ask("anthropic", '{"hilo": "x"}')
     (_name, url, headers, body), = t.requests
     assert data == {"hilo": "x"} and url.startswith("https://api.anthropic.com/v1/messages")
-    assert headers["x-api-key"] == KEY and "server-side-fallback-2026-07-01" in headers["anthropic-beta"]
+    assert headers["authorization"] == f"Bearer {KEY}" and "x-api-key" not in headers
+    assert "server-side-fallback-2026-07-01" in headers["anthropic-beta"]
     assert body == {"model": "claude-demo", "max_tokens": llm.MAX_OUTPUT_TOKENS, "fallbacks": "default", "system": "Sos el editor.",
                     "messages": [{"role": "user", "content": "Texto de las páginas."}]}
+
+
+def test_anthropic_sdk_never_traces_with_open_telemetry(monkeypatch):
+    # Aunque el entorno pida trazas con el texto, el cliente no le pide un tracer a OpenTelemetry ni agrega traceparent.
+    from opentelemetry import trace
+    monkeypatch.setenv("ANTHROPIC_OPEN_TELEMETRY_TRACES_CONTENT_MODE", "content")
+    monkeypatch.setattr(trace, "get_tracer", lambda *a, **k: pytest.fail("el SDK pidió un tracer de OpenTelemetry"))
+    _data, t = ask("anthropic", '{"hilo": "x"}')
+    (_name, _url, headers, _body), = t.requests
+    assert "traceparent" not in headers
 
 
 def test_openai_request_uses_the_configured_base_url():
