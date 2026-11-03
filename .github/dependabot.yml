@@ -10,10 +10,12 @@ updates:
     schedule:
       interval: monthly
   # Python: actualiza requirements*.txt a partir de los .in (formato pip-compile), todo junto en un solo PR.
+  # lockfile-only: solo toca los .txt; los pisos y topes de los .in (como ruff<0.18) los decide una persona.
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: monthly
+    versioning-strategy: lockfile-only
     groups:
       python:
         patterns: ["*"]
